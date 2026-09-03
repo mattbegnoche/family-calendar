@@ -1,0 +1,19 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Family {
+  id     String  @id @default(cuid())
+  events event[]
+}
+
+model event {
+  id       String @id @default(cuid())
+  family   Family @relation(fields: [familyId], references: [id])
+  familyId String
+}
