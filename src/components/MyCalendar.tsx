@@ -1,40 +1,73 @@
 "use client";
-import { Scheduler, CalendarEvent, ViewType, Resource } from "calendarkit-pro";
-import { useState } from "react";
 
-const customTheme = {
-  colors: {
-    primary: "#6366f1", // Primary accent color
-    secondary: "#ec4899", // Secondary color
-    background: "#ffffff", // Background color
-    foreground: "#0f172a", // Text color
-    border: "#e2e8f0", // Border color
-    muted: "#f1f5f9", // Muted backgrounds
-    accent: "#f1f5f9", // Accent backgrounds
-  },
-  fontFamily: "Inter, sans-serif",
-  borderRadius: "0.75rem",
-};
+import { Scheduler, type ViewType } from "calendarkit-pro";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CALENDAR_THEME } from "@/lib/calendar-theme";
+import { FAMILY_CALENDARS, FAMILY_RESOURCES } from "@/lib/family";
+import { EVENT_COLOR_CSS } from "@/lib/event-colors";
+import { useFamilyEvents } from "@/hooks/use-family-events";
 
 export default function MyCalendar() {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [view, setView] = useState<ViewType>("week");
-  const [date, setDate] = useState(new Date());
+  const [date, setDate] = useState(() => new Date());
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [hiddenCalendarIds, setHiddenCalendarIds] = useState<readonly string[]>(
+    [],
+  );
+
+  const { events, createEvent, updateEvent, deleteEvent, rescheduleEvent } =
+    useFamilyEvents();
+
+  // CalendarKit's toggle only swaps its own icon; the `dark` class is what
+  // actually drives the shadcn tokens it and the rest of the app render against.
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", isDarkMode);
+  }, [isDarkMode]);
+
+  const calendars = useMemo(
+    () =>
+      FAMILY_CALENDARS.map((calendar) => ({
+        ...calendar,
+        active: !hiddenCalendarIds.includes(calendar.id),
+      })),
+    [hiddenCalendarIds],
+  );
+
+  const handleCalendarToggle = useCallback(
+    (calendarId: string, active: boolean) => {
+      setHiddenCalendarIds((previous) =>
+        active
+          ? previous.filter((id) => id !== calendarId)
+          : [...previous, calendarId],
+      );
+    },
+    [],
+  );
+
+  const toggleTheme = useCallback(() => setIsDarkMode((dark) => !dark), []);
 
   return (
-    <Scheduler
-      theme={customTheme}
-      events={events}
-      view={view}
-      onViewChange={setView}
-      date={date}
-      onDateChange={setDate}
-      isDarkMode={isDarkMode}
-      onThemeToggle={() => setIsDarkMode(!isDarkMode)}
-      onEventCreate={(event) => {
-        setEvents([...events, { ...event, id: Date.now().toString() }]);
-      }}
-    />
+    <>
+      <style>{EVENT_COLOR_CSS}</style>
+      <Scheduler
+        className="h-full"
+        theme={CALENDAR_THEME}
+        events={events}
+        calendars={calendars}
+        resources={FAMILY_RESOURCES}
+        onCalendarToggle={handleCalendarToggle}
+        view={view}
+        onViewChange={setView}
+        date={date}
+        onDateChange={setDate}
+        isDarkMode={isDarkMode}
+        onThemeToggle={toggleTheme}
+        onEventCreate={createEvent}
+        onEventUpdate={updateEvent}
+        onEventDelete={deleteEvent}
+        onEventDrop={rescheduleEvent}
+        onEventResize={rescheduleEvent}
+      />
+    </>
   );
 }
