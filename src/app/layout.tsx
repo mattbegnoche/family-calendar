@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "Family Calendar App",
+  title: "Family Dashboard",
   description:
     "Calendar app to organize your families life and connect everything into one.",
 };
