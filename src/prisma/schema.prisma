@@ -7,6 +7,19 @@ datasource db {
   provider = "postgresql"
 }
 
+// ============================================================================
+// STEP 1 — AUTH ONLY.
+//
+// Everything below the AUTH section is the household/calendar domain, parked
+// until Google sign-in works end to end. These four models are exactly what
+// @auth/prisma-adapter 2.11.3 touches and nothing more.
+//
+// Re-enabling later is a purely ADDITIVE migration: every field that links
+// User back to the domain is nullable (householdId has to be, or the adapter's
+// createUser breaks sign-in), so uncommenting adds nullable columns and new
+// tables without rewriting anything that exists.
+// ============================================================================
+
 // ---------- Auth.js. Field names dictated by @auth/prisma-adapter 2.11.3 ----------
 
 model User {
@@ -16,34 +29,38 @@ model User {
   emailVerified DateTime? @db.Timestamptz(3)
   image         String?
 
-  // MUST be nullable. Verified: the adapter's createUser strips `id` and passes only
-  // { name, email, emailVerified, image }. A required column here kills the very first
-  // sign-in with a generic OAuth error at /api/auth/callback/google.
-  householdId String?
-  household   Household? @relation(fields: [householdId], references: [id], onDelete: SetNull)
-
-  accounts      Account[]
-  sessions      Session[]
-  member        Member?
-  createdEvents Event[]   @relation("EventAuthor")
-  createdTasks  Task[]    @relation("TaskAuthor")
+  accounts Account[]
+  sessions Session[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
-  @@index([householdId])
+  // Parked until the domain returns:
+  //   householdId   String?
+  //   household     Household? @relation(fields: [householdId], references: [id], onDelete: SetNull)
+  //   member        Member?
+  //   createdEvents Event[]    @relation("EventAuthor")
+  //   createdTasks  Task[]     @relation("TaskAuthor")
+  //   @@index([householdId])
+  //
+  // householdId MUST stay nullable whenever it comes back. Verified in
+  // @auth/core: the adapter's createUser strips `id` and passes only
+  // { name, email, emailVerified, image }, so a required column here kills the
+  // very first sign-in with a generic OAuth error at /api/auth/callback/google.
 }
 
 model Account {
-  // Surrogate id rather than a compound @@id, so CalendarConnection can FK to the grant.
+  // Surrogate id rather than a compound @@id, so CalendarConnection can FK to
+  // the grant when it comes back.
   id                String @id @default(cuid())
   userId            String
   type              String
   provider          String
   providerAccountId String
 
-  // snake_case is mandatory — see note above. refresh_token is where the Google
-  // Calendar credential lives.
+  // snake_case is mandatory: @auth/core's defaultAccount whitelists exactly
+  // these seven fields and spreads them straight into account.create({ data }).
+  // refresh_token is where the Google Calendar credential lands.
   refresh_token String?
   access_token  String?
   expires_at    Int? // epoch seconds; overflows Jan 2038, canonical anyway
@@ -52,8 +69,9 @@ model Account {
   id_token      String?
   session_state String?
 
-  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  calendarConnections CalendarConnection[]
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Parked: calendarConnections CalendarConnection[]
 
   @@unique([provider, providerAccountId]) // -> where: { provider_providerAccountId }
   @@index([userId])
@@ -79,182 +97,195 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+// ============================================================================
+// PARKED — household + calendar domain.
+//
+// Reviewed and validated before being commented out. To bring back: uncomment
+// this block, restore the User/Account fields noted above, then
+// `prisma migrate dev --name domain`.
+//
+// Two things to remember when you do:
+//   1. Member.color needs a CHECK constraint added by hand in the migration
+//      SQL: CHECK (color ~ '^#[0-9a-fA-F]{6}$'). @db.VarChar(7) alone still
+//      accepts '#xyz' and '1234567', and src/lib/event-colors.ts builds CSS
+//      fills by string-concatenating alpha onto this value.
+//   2. Nothing creates a Household, so User.householdId stays NULL until you
+//      add a createUser event in auth.ts.
+// ============================================================================
+
 // ---------- Household domain ----------
-
-model Household {
-  id       String @id @default(cuid())
-  name     String
-  timeZone String @default("America/New_York") // anchors all-day event boundaries
-
-  users       User[]
-  members     Member[]
-  connections CalendarConnection[]
-  events      Event[]
-  tasks       Task[]
-
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
-}
-
-enum MemberKind {
-  PERSON
-  SHARED // the "Everyone" row
-}
-
-model Member {
-  id          String    @id @default(cuid())
-  householdId String
-  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-
-  // Mirrors today's in-memory ids so src/lib/family.ts port mechanically:
-  // "everyone" | "mom" | "dad" | "lacy" | "haven"
-  slug String
-
-  name      String
-  // VarChar(7) earns its place: src/lib/event-colors.ts builds fills by
-  // string-concatenating alpha onto this value ("#4f46e5" + "15"), so anything
-  // but 6-digit hex silently yields an invalid CSS color. Add a CHECK constraint
-  // (color ~ '^#[0-9a-fA-F]{6}$') by hand in the migration SQL.
-  color     String     @db.VarChar(7)
-  kind      MemberKind @default(PERSON)
-  sortOrder Int        @default(0)
-
-  // Soft delete. Hard deletion is blocked by Restrict below so history survives.
-  archivedAt DateTime? @db.Timestamptz(3)
-
-  // Optional link to a login. Lacy and Haven have a Member and no User.
-  userId String? @unique
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  events         Event[]
-  connections    CalendarConnection[]
-  assignedTasks  Task[]               @relation("TaskAssignee")
-  completedTasks Task[]               @relation("TaskCompleter")
-
-  @@unique([householdId, slug]) // guarantees exactly one "everyone"
-  @@index([householdId, sortOrder]) // calendar column order
-}
-
+//
+// model Household {
+//   id       String @id @default(cuid())
+//   name     String
+//   timeZone String @default("America/New_York") // anchors all-day event boundaries
+//
+//   users       User[]
+//   members     Member[]
+//   connections CalendarConnection[]
+//   events      Event[]
+//   tasks       Task[]
+//
+//   createdAt DateTime @default(now()) @db.Timestamptz(3)
+//   updatedAt DateTime @updatedAt @db.Timestamptz(3)
+// }
+//
+// enum MemberKind {
+//   PERSON
+//   SHARED // the "Everyone" row
+// }
+//
+// model Member {
+//   id          String    @id @default(cuid())
+//   householdId String
+//   household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+//
+//   // Mirrors today's in-memory ids so src/lib/family.ts ports mechanically:
+//   // "everyone" | "mom" | "dad" | "lacy" | "haven"
+//   slug String
+//
+//   name      String
+//   color     String     @db.VarChar(7)
+//   kind      MemberKind @default(PERSON)
+//   sortOrder Int        @default(0)
+//
+//   // Soft delete. Hard deletion is blocked by Restrict below so history survives.
+//   archivedAt DateTime? @db.Timestamptz(3)
+//
+//   // Optional link to a login. Lacy and Haven have a Member and no User.
+//   userId String? @unique
+//   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+//
+//   events         Event[]
+//   connections    CalendarConnection[]
+//   assignedTasks  Task[]               @relation("TaskAssignee")
+//   completedTasks Task[]               @relation("TaskCompleter")
+//
+//   @@unique([householdId, slug]) // guarantees exactly one "everyone"
+//   @@index([householdId, sortOrder]) // calendar column order
+// }
+//
 // ---------- Google connections ----------
-
-model CalendarConnection {
-  id          String    @id @default(cuid())
-  householdId String
-  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-
-  accountId String // one hop to refresh_token
-  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-
-  memberId String // which column imported events land in
-  member   Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
-
-  googleCalendarId String
-  summary          String?
-  enabled          Boolean @default(true)
-
-  // Pull-on-demand freshness for a single rolling window. Deliberately NOT a
-  // syncToken: Google forbids syncToken alongside timeMin/timeMax, so the windowed
-  // strategy and the token strategy are mutually exclusive. Windowed is v1.
-  syncWindowStart DateTime? @db.Date
-  syncWindowEnd   DateTime? @db.Date
-  lastSyncedAt    DateTime? @db.Timestamptz(3)
-  lastSyncError   String?
-
-  events Event[]
-
-  @@unique([accountId, googleCalendarId])
-  @@unique([householdId, googleCalendarId]) // stops both parents importing the shared
-  // family calendar and doubling every event
-  @@index([householdId, enabled])
-}
-
+//
+// model CalendarConnection {
+//   id          String    @id @default(cuid())
+//   householdId String
+//   household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+//
+//   accountId String // one hop to refresh_token
+//   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+//
+//   memberId String // which column imported events land in
+//   member   Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+//
+//   googleCalendarId String
+//   summary          String?
+//   enabled          Boolean @default(true)
+//
+//   // Pull-on-demand freshness for a single rolling window. Deliberately NOT a
+//   // syncToken: Google forbids syncToken alongside timeMin/timeMax, so the
+//   // windowed strategy and the token strategy are mutually exclusive.
+//   syncWindowStart DateTime? @db.Date
+//   syncWindowEnd   DateTime? @db.Date
+//   lastSyncedAt    DateTime? @db.Timestamptz(3)
+//   lastSyncError   String?
+//
+//   events Event[]
+//
+//   @@unique([accountId, googleCalendarId])
+//   @@unique([householdId, googleCalendarId]) // stops both parents importing the
+//                                             // shared family calendar and doubling
+//                                             // every event
+//   @@index([householdId, enabled])
+// }
+//
 // ---------- Events: local and imported in one table ----------
-
-enum EventSource {
-  LOCAL
-  GOOGLE
-}
-
-enum EventStatus {
-  CONFIRMED
-  TENTATIVE
-  CANCELLED
-}
-
-model Event {
-  id          String    @id @default(cuid())
-  householdId String
-  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-
-  // Denormalized onto the row rather than derived from the connection, so one
-  // event can be reassigned without moving the whole calendar.
-  memberId String
-  member   Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
-
-  source EventSource @default(LOCAL)
-  status EventStatus @default(CONFIRMED) // Google sends deletions as "cancelled"
-
-  connectionId    String?
-  connection      CalendarConnection? @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  googleEventId   String?
-  googleEtag      String?
-  googleUpdatedAt DateTime?           @db.Timestamptz(3)
-
-  title       String
-  description String?
-  location    String?
-
-  // All-day events stored as [local midnight, next local midnight) in Household.timeZone,
-  // so one index serves every event.
-  startsAt DateTime @db.Timestamptz(3)
-  endsAt   DateTime @db.Timestamptz(3)
-  allDay   Boolean  @default(false)
-
-  // When true, re-import must not clobber memberId (manual reassignment wins).
-  memberLocked Boolean @default(false)
-
-  createdById String?
-  createdBy   User?   @relation("EventAuthor", fields: [createdById], references: [id], onDelete: SetNull)
-
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
-
-  // The idempotent re-import key. Both columns nullable, and Postgres treats NULLs as
-  // distinct in a unique index, so LOCAL rows never collide with each other.
-  @@unique([connectionId, googleEventId])
-  @@index([householdId, startsAt])
-  @@index([memberId])
-}
-
+//
+// enum EventSource {
+//   LOCAL
+//   GOOGLE
+// }
+//
+// enum EventStatus {
+//   CONFIRMED
+//   TENTATIVE
+//   CANCELLED
+// }
+//
+// model Event {
+//   id          String    @id @default(cuid())
+//   householdId String
+//   household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+//
+//   // Denormalized onto the row rather than derived from the connection, so one
+//   // event can be reassigned without moving the whole calendar.
+//   memberId String
+//   member   Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+//
+//   source EventSource @default(LOCAL)
+//   status EventStatus @default(CONFIRMED) // Google sends deletions as "cancelled"
+//
+//   connectionId    String?
+//   connection      CalendarConnection? @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+//   googleEventId   String?
+//   googleEtag      String?
+//   googleUpdatedAt DateTime?           @db.Timestamptz(3)
+//
+//   title       String
+//   description String?
+//   location    String?
+//
+//   // All-day events stored as [local midnight, next local midnight) in
+//   // Household.timeZone, so one index serves every event.
+//   startsAt DateTime @db.Timestamptz(3)
+//   endsAt   DateTime @db.Timestamptz(3)
+//   allDay   Boolean  @default(false)
+//
+//   // When true, re-import must not clobber memberId (manual reassignment wins).
+//   memberLocked Boolean @default(false)
+//
+//   createdById String?
+//   createdBy   User?   @relation("EventAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+//
+//   createdAt DateTime @default(now()) @db.Timestamptz(3)
+//   updatedAt DateTime @updatedAt @db.Timestamptz(3)
+//
+//   // The idempotent re-import key. Both columns nullable, and Postgres treats
+//   // NULLs as distinct in a unique index, so LOCAL rows never collide.
+//   @@unique([connectionId, googleEventId])
+//   @@index([householdId, startsAt])
+//   @@index([memberId])
+// }
+//
 // ---------- Tasks ----------
-
-model Task {
-  id          String    @id @default(cuid())
-  householdId String
-  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-
-  // Assignee is a MEMBER — a kid with no login can own a task.
-  memberId String
-  member   Member @relation("TaskAssignee", fields: [memberId], references: [id], onDelete: Restrict)
-
-  // Author is a USER — "we add tasks on their behalf". Nullable so a task
-  // outlives its author's account.
-  createdById String?
-  createdBy   User?   @relation("TaskAuthor", fields: [createdById], references: [id], onDelete: SetNull)
-
-  title String
-  notes String?
-  dueAt DateTime? @db.Timestamptz(3)
-
-  // completedAt over a boolean: same information plus "when".
-  completedAt         DateTime? @db.Timestamptz(3)
-  completedByMemberId String?
-  completedByMember   Member?   @relation("TaskCompleter", fields: [completedByMemberId], references: [id], onDelete: SetNull)
-
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
-
-  @@index([householdId, dueAt])
-  @@index([householdId, completedAt])
-  @@index([memberId])
-}
+//
+// model Task {
+//   id          String    @id @default(cuid())
+//   householdId String
+//   household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+//
+//   // Assignee is a MEMBER — a kid with no login can own a task.
+//   memberId String
+//   member   Member @relation("TaskAssignee", fields: [memberId], references: [id], onDelete: Restrict)
+//
+//   // Author is a USER — "we add tasks on their behalf". Nullable so a task
+//   // outlives its author's account.
+//   createdById String?
+//   createdBy   User?   @relation("TaskAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+//
+//   title String
+//   notes String?
+//   dueAt DateTime? @db.Timestamptz(3)
+//
+//   // completedAt over a boolean: same information plus "when".
+//   completedAt         DateTime? @db.Timestamptz(3)
+//   completedByMemberId String?
+//   completedByMember   Member?   @relation("TaskCompleter", fields: [completedByMemberId], references: [id], onDelete: SetNull)
+//
+//   createdAt DateTime @default(now()) @db.Timestamptz(3)
+//   updatedAt DateTime @updatedAt @db.Timestamptz(3)
+//
+//   @@index([householdId, dueAt])
+//   @@index([householdId, completedAt])
+//   @@index([memberId])
+// }
