@@ -23,10 +23,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: { strategy: "database", maxAge: NINETY_DAYS_IN_SECONDS },
 
-  // Auth.js builds callback URLs from the Host header when this is on. Fine on
-  // localhost; in production set AUTH_URL instead, so a forged Host header
-  // cannot influence where Google sends the authorization code.
-  trustHost: process.env.NODE_ENV === "development",
+  // trustHost is deliberately NOT set here. @auth/core defaults it with `??`,
+  // so any explicit value — including `false` — defeats its own logic:
+  //   trustHost ??= !!(AUTH_URL ?? AUTH_TRUST_HOST ?? VERCEL ?? NODE_ENV !== "production")
+  // Locally that resolves true via NODE_ENV; on Vercel via AUTH_URL, which also
+  // pins the callback URL so a forged Host header cannot redirect the OAuth code.
 
   providers: [Google],
 

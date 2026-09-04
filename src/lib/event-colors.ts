@@ -1,5 +1,3 @@
-import { FAMILY_MEMBERS } from "@/lib/family";
-
 /**
  * CalendarKit hardcodes an event card's fill as `${event.color}15` — 8% alpha —
  * as an inline style. That reads as a soft pastel on white, which is what it was
@@ -50,8 +48,14 @@ function rulesFor(color: string): string {
   ].join("");
 }
 
-export const EVENT_COLOR_CSS: string = FAMILY_MEMBERS.filter((member) =>
-  HEX_COLOR.test(member.color),
-)
-  .map((member) => rulesFor(member.color))
-  .join("\n");
+/**
+ * Build the override rules for a set of member colours.
+ *
+ * A function, not a module constant: members come from the database, so a
+ * colour added after boot would otherwise get no rule and its events would
+ * render at CalendarKit's faint 8% default with nothing to explain why.
+ */
+export function buildEventColorCss(colors: readonly string[]): string {
+  const unique = [...new Set(colors)].filter((color) => HEX_COLOR.test(color));
+  return unique.map(rulesFor).join("\n");
+}

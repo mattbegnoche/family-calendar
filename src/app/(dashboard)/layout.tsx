@@ -1,5 +1,7 @@
 import { ReactNode } from "react";
 
+import { auth } from "@/auth";
+
 import { AppSidebar } from "@/components/AppSidebar";
 import { DashboardBreadcrumb } from "@/components/DashboardBreadcrumb";
 import { Separator } from "@/components/ui/separator";
@@ -9,10 +11,23 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 
-export default function DashboardLayout({ children }: { children: ReactNode }) {
+export default async function DashboardLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  // session.user already carries name/email/image from the Google profile —
+  // no database round trip needed just to label the sidebar.
+  const session = await auth();
+  const signedInUser = {
+    name: session?.user?.name ?? null,
+    email: session?.user?.email ?? null,
+    image: session?.user?.image ?? null,
+  };
+
   return (
     <SidebarProvider>
-      <AppSidebar />
+      <AppSidebar user={signedInUser} />
       <SidebarInset>
         {/* Fixed-height bar so the page below can own the remaining viewport. */}
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">

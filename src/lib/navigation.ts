@@ -13,7 +13,6 @@ export interface NavItem {
 
 export const MAIN_NAV: readonly NavItem[] = [
   { title: "Calendar", href: "/calendar", icon: Calendar },
-  { title: "Calendar Kit", href: "/calendar-kit", icon: Calendar },
 
   { title: "Tasks", href: "/tasks", icon: ListTodo },
 ];
