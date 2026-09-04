@@ -1,13 +1,18 @@
 "use client";
 
-import { Scheduler, type ViewType } from "calendarkit-pro";
+import { Scheduler, type CalendarEvent, type ViewType } from "calendarkit-pro";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CALENDAR_THEME } from "@/lib/calendar-theme";
 import { FAMILY_CALENDARS, FAMILY_RESOURCES } from "@/lib/family";
 import { EVENT_COLOR_CSS } from "@/lib/event-colors";
 import { useFamilyEvents } from "@/hooks/use-family-events";
 
-export default function MyCalendar() {
+interface MyCalendarProps {
+  /** Events fetched on the server; seeds the client state once on mount. */
+  initialEvents?: readonly CalendarEvent[];
+}
+
+export default function MyCalendar({ initialEvents = [] }: MyCalendarProps) {
   const [view, setView] = useState<ViewType>("week");
   const [date, setDate] = useState(() => new Date());
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -16,7 +21,7 @@ export default function MyCalendar() {
   );
 
   const { events, createEvent, updateEvent, deleteEvent, rescheduleEvent } =
-    useFamilyEvents();
+    useFamilyEvents(initialEvents);
 
   // CalendarKit's toggle only swaps its own icon; the `dark` class is what
   // actually drives the shadcn tokens it and the rest of the app render against.

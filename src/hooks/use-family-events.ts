@@ -2,9 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { CalendarEvent } from "calendarkit-pro";
-import { startOfWeek } from "@/lib/dates";
 import { memberColor, SHARED_MEMBER_ID } from "@/lib/family";
-import { buildSampleWeek } from "@/lib/sample-events";
 
 const UNTITLED_EVENT = "Untitled event";
 
@@ -21,11 +19,14 @@ function createEventId(): string {
   return `event-${Date.now()}-${Math.floor(Math.random() * ID_RANDOM_RANGE)}`;
 }
 
-/** Every operation returns a new array — events are never mutated in place. */
-export function useFamilyEvents() {
-  const [events, setEvents] = useState<CalendarEvent[]>(() =>
-    buildSampleWeek(startOfWeek(new Date())),
-  );
+/**
+ * Every operation returns a new array — events are never mutated in place.
+ *
+ * `initialEvents` seeds the client from whatever the server fetched. Edits are
+ * local-only for now; writing back to Google is a later step.
+ */
+export function useFamilyEvents(initialEvents: readonly CalendarEvent[] = []) {
+  const [events, setEvents] = useState<CalendarEvent[]>(() => [...initialEvents]);
 
   const createEvent = useCallback((draft: Partial<CalendarEvent>) => {
     if (!draft.start || !draft.end) {
