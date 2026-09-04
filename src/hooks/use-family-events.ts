@@ -22,8 +22,8 @@ function createEventId(): string {
 /**
  * Every operation returns a new array — events are never mutated in place.
  *
- * `initialEvents` seeds the client from whatever the server fetched. Edits are
- * local-only for now; writing back to Google is a later step.
+ * `initialEvents` seeds the client from whatever the server passed in. Edits
+ * are local-only and lost on reload until events are persisted.
  */
 export function useFamilyEvents(initialEvents: readonly CalendarEvent[] = []) {
   const [events, setEvents] = useState<CalendarEvent[]>(() => [...initialEvents]);
