@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// Auth.js — field names dictated by @auth/prisma-adapter 2.11.3.
+// Do not rename these; the adapter spreads token objects straight into
+// account.create({ data }) and looks users up by exact field name.
+// ============================================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique // getUserByEmail does findUnique
+  emailVerified DateTime? @db.Timestamptz(3)
+  image         String?
+
+  accounts Account[]
+  sessions Session[]
+
+  // MUST stay nullable. Verified in @auth/core: the adapter's createUser strips
+  // `id` and passes only { name, email, emailVerified, image }, so a required
+  // column here kills the very first sign-in with a generic OAuth error.
+  householdId String?
+  household   Household? @relation(fields: [householdId], references: [id], onDelete: SetNull)
+
+  // The member row this login represents, if any. Optional in both directions:
+  // adults have both, kids have a member and no login.
+  member Member?
+
+  createdEvents Event[] @relation("EventAuthor")
+  createdTasks  Task[]  @relation("TaskAuthor")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([householdId])
+}
+
+model Account {
+  id                String @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+
+  // snake_case is mandatory: @auth/core's defaultAccount whitelists exactly
+  // these seven fields and spreads them into account.create({ data }).
+  refresh_token String?
+  access_token  String?
+  expires_at    Int? // epoch seconds; overflows Jan 2038, canonical anyway
+  token_type    String?
+  scope         String?
+  id_token      String?
+  session_state String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId]) // -> where: { provider_providerAccountId }
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime @db.Timestamptz(3)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Never written under Google-only sign-in, but the adapter's types reference
+// prisma.verificationToken. Keep it — one empty table.
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime @db.Timestamptz(3)
+
+  @@unique([identifier, token])
+}
+
+// ============================================================================
+// Household domain
+//
+// Every instant is @db.Timestamptz(3). Prisma's default maps DateTime to
+// `timestamp(3)` WITHOUT time zone: Prisma itself round-trips UTC correctly,
+// but every raw query and Neon SQL-editor session would silently be wrong.
+// For a calendar app that is the highest-value annotation in this file.
+// ============================================================================
+
+model Household {
+  id       String @id @default(cuid())
+  name     String
+  // IANA zone. Anchors all-day boundaries so "all day Sept 4" means the same
+  // thing regardless of which member's device is looking at it.
+  timeZone String @default("America/New_York")
+
+  users   User[]
+  members Member[]
+  events  Event[]
+  tasks   Task[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+
+/// Skylight groups routines into three columns rather than exact times, which
+/// is what makes them readable at a glance on a wall display. `dueAt` stays
+/// separate for the optional exact time that places a task on the calendar.
+enum TimeOfDay {
+  MORNING
+  AFTERNOON
+  EVENING
+}
+
+enum MemberKind {
+  PERSON
+  SHARED // the "Everyone" row: household-wide events and tasks
+}
+
+/// A person on the calendar. Deliberately NOT the same thing as a user account:
+/// a member is a name and a colour, so a child can own a column and be assigned
+/// tasks without ever having an email address or a login.
+model Member {
+  id          String    @id @default(cuid())
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  // Stable human-readable key. Mirrors the ids already in src/lib/family.ts
+  // ("everyone" | "mom" | "dad" | "lacy" | "haven") so that file ports over
+  // mechanically while the primary key moves to a cuid.
+  slug String
+
+  name String
+  // VarChar(7) earns its place here: src/lib/event-colors.ts builds CSS fills
+  // by string-concatenating alpha onto this value ("#4f46e5" + "15"), so
+  // anything but 6-digit hex silently produces an invalid colour. The matching
+  // CHECK constraint is added by hand in the migration SQL.
+  color     String     @db.VarChar(7)
+  kind      MemberKind @default(PERSON)
+  sortOrder Int        @default(0)
+
+  // Soft delete. Hard deletion is blocked by Restrict on Event/Task below, so
+  // archiving is how a member leaves the picker without erasing their history.
+  archivedAt DateTime? @db.Timestamptz(3)
+
+  // Optional link to a login. @unique makes it one-to-one with User.
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  events         Event[]
+  assignedTasks  Task[]  @relation("TaskAssignee")
+  completedTasks Task[]  @relation("TaskCompleter")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([householdId, slug]) // guarantees exactly one "everyone" per household
+  @@index([householdId, sortOrder]) // the order columns appear in the calendar
+}
+
+/// A calendar event. One member owns it; use the SHARED member for anything
+/// that belongs to the whole household.
+model Event {
+  id          String    @id @default(cuid())
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  title       String
+  description String?
+  location    String?
+
+  // All-day events are stored as [local midnight, next local midnight) in
+  // Household.timeZone, so a single index serves timed and all-day alike.
+  startsAt DateTime @db.Timestamptz(3)
+  endsAt   DateTime @db.Timestamptz(3)
+  allDay   Boolean  @default(false)
+
+  // Who typed it in. Nullable so an event outlives its author's account.
+  createdById String?
+  createdBy   User?   @relation("EventAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  // The window query is an overlap test (startsAt < rangeEnd AND endsAt >
+  // rangeStart). Postgres seeks on householdId and ranges on startsAt; endsAt
+  // becomes a filter, which is the right trade at family scale.
+  @@index([householdId, startsAt])
+  @@index([memberId]) // FK lookup for ON DELETE RESTRICT
+}
+
+/// A task assigned to a member. `dueAt` is optional by design: a task with a
+/// time appears in the calendar grid alongside events, one without lives only
+/// in the task list.
+model Task {
+  id          String    @id @default(cuid())
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  // Assignee is a MEMBER, so a child with no login can own a task.
+  memberId String
+  member   Member @relation("TaskAssignee", fields: [memberId], references: [id], onDelete: Restrict)
+
+  // Author is a USER — the parent adding it on their behalf. Assignee and
+  // author being different columns is what encodes that, structurally.
+  createdById String?
+  createdBy   User?   @relation("TaskAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+
+  title String
+  notes String?
+  /// A single emoji. Skylight leans on these so children who cannot read yet
+  /// can still recognise their own routines.
+  icon  String?
+
+  /// Which column the task appears in on the tasks page.
+  timeOfDay TimeOfDay @default(MORNING)
+
+  // Optional exact time. When set, the task is also placed on the calendar
+  // grid; without one it lives only in the task list.
+  dueAt     DateTime? @db.Timestamptz(3)
+  dueAllDay Boolean   @default(true)
+
+  // completedAt over an is_done boolean: same information plus "when", for free.
+  // The completer is a Member rather than a User so a shared wall display can
+  // check something off without anyone logging in.
+  completedAt         DateTime? @db.Timestamptz(3)
+  completedByMemberId String?
+  completedByMember   Member?   @relation("TaskCompleter", fields: [completedByMemberId], references: [id], onDelete: SetNull)
+
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([householdId, timeOfDay, sortOrder]) // the three columns, in order
+  @@index([householdId, dueAt]) // scheduled tasks for the calendar window
+  @@index([householdId, completedAt]) // the open-tasks list
+  @@index([memberId])
+  @@index([completedByMemberId])
+}
