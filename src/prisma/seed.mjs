@@ -21,20 +21,64 @@ for (const line of fs.readFileSync(path.join(ROOT, ".env.local"), "utf8").split(
 const require = createRequire(import.meta.url);
 const { Client } = require("pg");
 
-const HOUSEHOLD_NAME = "Begnoche Family";
-const HOUSEHOLD_TIME_ZONE = "America/Chicago";
+/**
+ * Household details come from the environment, not from source. This repository
+ * is public; family names and addresses are not.
+ *
+ *   HOUSEHOLD_NAME       "The Smith Family"
+ *   HOUSEHOLD_TIME_ZONE  IANA zone, e.g. "America/Chicago"
+ *   HOUSEHOLD_MEMBERS    JSON array of { slug, name, color, kind?, sortOrder? }
+ *
+ * See .env.example for the shape.
+ */
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
-/** Colours must be 6-digit hex — the DB enforces it via member_color_hex. */
-const MEMBERS = [
-  { slug: "everyone", name: "Household", color: "#4f46e5", kind: "SHARED", sortOrder: 0 },
-  { slug: "matt", name: "Matt", color: "#0891b2", kind: "PERSON", sortOrder: 1 },
-  { slug: "erika", name: "Erika", color: "#db2777", kind: "PERSON", sortOrder: 2 },
-  { slug: "lacy", name: "Lacy", color: "#7c3aed", kind: "PERSON", sortOrder: 3 },
-  { slug: "haven", name: "Haven", color: "#ea580c", kind: "PERSON", sortOrder: 4 },
-];
+function requireEnv(name) {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is not set — see .env.example`);
+  return value;
+}
 
-/** Links an existing login to a member, when that user has signed in. */
-const USER_LINKS = [{ email: "mattbegnochedev@gmail.com", slug: "matt" }];
+const HOUSEHOLD_NAME = requireEnv("HOUSEHOLD_NAME");
+const HOUSEHOLD_TIME_ZONE = process.env.HOUSEHOLD_TIME_ZONE ?? "America/Chicago";
+
+function parseMembers() {
+  let parsed;
+  try {
+    parsed = JSON.parse(requireEnv("HOUSEHOLD_MEMBERS"));
+  } catch (error) {
+    throw new Error(`HOUSEHOLD_MEMBERS is not valid JSON: ${error.message}`);
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error("HOUSEHOLD_MEMBERS must be a non-empty JSON array");
+  }
+  return parsed.map((member, index) => {
+    if (!member.slug || !member.name) {
+      throw new Error(`HOUSEHOLD_MEMBERS[${index}] needs a slug and a name`);
+    }
+    // Fail here rather than let Postgres reject it via member_color_hex.
+    if (!HEX_COLOR.test(member.color ?? "")) {
+      throw new Error(
+        `HOUSEHOLD_MEMBERS[${index}] (${member.slug}) needs a 6-digit hex colour`,
+      );
+    }
+    return {
+      slug: member.slug,
+      name: member.name,
+      color: member.color,
+      kind: member.kind === "SHARED" ? "SHARED" : "PERSON",
+      sortOrder: member.sortOrder ?? index,
+    };
+  });
+}
+
+const MEMBERS = parseMembers();
+
+/**
+ * Links a login to a member, once that person has signed in at least once.
+ * HOUSEHOLD_USER_LINKS is JSON: [{ "email": "...", "slug": "..." }]
+ */
+const USER_LINKS = JSON.parse(process.env.HOUSEHOLD_USER_LINKS ?? "[]");
 
 const client = new Client({ connectionString: process.env.DIRECT_URL });
 await client.connect();

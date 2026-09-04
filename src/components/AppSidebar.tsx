@@ -19,14 +19,8 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { signOutUser } from "@/app/actions/auth";
-import { FAMILY_MEMBERS, SHARED_MEMBER_ID } from "@/lib/family";
 import { MAIN_NAV, isNavItemActive } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
-
-// TODO: replace with Household.name once the household models come back.
-const HOUSEHOLD_NAME = "Begnoche Family";
-
-const PEOPLE = FAMILY_MEMBERS.filter((member) => member.id !== SHARED_MEMBER_ID);
 
 export interface SignedInUser {
   name: string | null;
@@ -65,31 +59,46 @@ function NavIcon({ icon: Icon, isActive }: { icon: LucideIcon; isActive: boolean
   );
 }
 
-export function AppSidebar({ user }: { user: SignedInUser }) {
+export interface SidebarMember {
+  id: string;
+  name: string;
+  color: string;
+  isShared: boolean;
+}
+
+export interface AppSidebarProps {
+  user: SignedInUser;
+  householdName: string;
+  members: readonly SidebarMember[];
+}
+
+export function AppSidebar({ user, householdName, members }: AppSidebarProps) {
   const pathname = usePathname();
+  // The shared "Household" row is not a person, so it does not get a dot.
+  const people = members.filter((member) => !member.isShared);
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" tooltip={HOUSEHOLD_NAME}>
+            <SidebarMenuButton size="lg" tooltip={householdName}>
               {/* Same indigo-to-violet ramp as the favicon and the primary token. */}
               <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-[#4f46e5] to-[#7c3aed] text-white">
                 <Calendar className="size-5!" />
               </div>
               <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate font-semibold">{HOUSEHOLD_NAME}</span>
+                <span className="truncate font-semibold">{householdName}</span>
                 <span className="flex items-center gap-1 text-xs text-sidebar-foreground/60">
-                  {PEOPLE.map((member) => (
+                  {people.map((member) => (
                     <span
                       key={member.id}
-                      title={member.label}
+                      title={member.name}
                       className="size-2 rounded-full"
                       style={{ backgroundColor: member.color }}
                     />
                   ))}
-                  <span className="ml-0.5">{PEOPLE.length} members</span>
+                  <span className="ml-0.5">{people.length} members</span>
                 </span>
               </div>
             </SidebarMenuButton>

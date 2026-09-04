@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 
 import { auth } from "@/auth";
+import { requireHousehold } from "@/lib/household";
 
 import { AppSidebar } from "@/components/AppSidebar";
 import { DashboardBreadcrumb } from "@/components/DashboardBreadcrumb";
@@ -18,7 +19,7 @@ export default async function DashboardLayout({
 }) {
   // session.user already carries name/email/image from the Google profile —
   // no database round trip needed just to label the sidebar.
-  const session = await auth();
+  const [session, { household }] = await Promise.all([auth(), requireHousehold()]);
   const signedInUser = {
     name: session?.user?.name ?? null,
     email: session?.user?.email ?? null,
@@ -27,7 +28,16 @@ export default async function DashboardLayout({
 
   return (
     <SidebarProvider>
-      <AppSidebar user={signedInUser} />
+      <AppSidebar
+        user={signedInUser}
+        householdName={household.name}
+        members={household.members.map((member) => ({
+          id: member.id,
+          name: member.name,
+          color: member.color,
+          isShared: member.kind === "SHARED",
+        }))}
+      />
       <SidebarInset>
         {/* Fixed-height bar so the page below can own the remaining viewport. */}
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
