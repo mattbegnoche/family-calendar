@@ -1,8 +1,17 @@
+# pnpm 11 refuses to run a dependency's build scripts unless listed here, and
+# exits non-zero when any entry is unresolved. The values must be real booleans;
+# pnpm writes "set this to true or false" as a prompt, and leaving that literal
+# string in place fails `pnpm install` with ERR_PNPM_IGNORED_BUILDS.
 allowBuilds:
-  '@prisma/engines': set this to true or false
-  esbuild: set this to true or false
-  msgpackr-extract: set this to true or false
-  prisma: set this to true or false
+  # Required: Prisma fetches its query engine during install. Without this the
+  # generated client has no engine to talk to.
+  '@prisma/engines': true
+  prisma: true
+  # Required: esbuild's postinstall fetches its platform binary.
+  esbuild: true
+  # Optional native accelerators — both fall back to pure JS.
+  msgpackr-extract: false
   sharp: false
   unrs-resolver: false
-  workerd: set this to true or false
+  # Cloudflare runtime, unused here.
+  workerd: false

@@ -1,6 +1,7 @@
 import { ReactNode } from "react";
 
 import { auth } from "@/auth";
+import { familyThemeStyle } from "@/lib/family-theme";
 import { requireHousehold } from "@/lib/household";
 
 import { AppSidebar } from "@/components/AppSidebar";
@@ -27,10 +28,14 @@ export default async function DashboardLayout({
   };
 
   return (
-    <SidebarProvider>
+    // The household colour becomes the accent for everything inside: see
+    // .family-theme in globals.css.
+    <SidebarProvider className="family-theme" style={familyThemeStyle(household.color)}>
       <AppSidebar
         user={signedInUser}
         householdName={household.name}
+        householdColor={household.color}
+        householdIconKey={household.icon}
         members={household.members.map((member) => ({
           id: member.id,
           name: member.name,
@@ -38,7 +43,10 @@ export default async function DashboardLayout({
           isShared: member.kind === "SHARED",
         }))}
       />
-      <SidebarInset>
+      {/* Pinned to the viewport: the provider is only min-h-svh, so without
+          this nothing below has a definite height, every page's h-full resolves
+          to auto, and the calendar grid grows off-screen instead of scrolling. */}
+      <SidebarInset className="h-svh overflow-hidden">
         {/* Fixed-height bar so the page below can own the remaining viewport. */}
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />

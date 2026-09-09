@@ -1,5 +1,13 @@
 /**
- * One-off household setup. Idempotent — safe to re-run.
+ * One-off household setup for local development. Idempotent — safe to re-run.
+ *
+ * SUPERSEDED for ordinary use: households are now created through the
+ * onboarding flow at /onboarding, which mints a real encrypted invite code.
+ * This script cannot do that — the code is derived from FAMILY_CODE_SECRET by
+ * src/lib/family-code.ts, and duplicating that crypto in a standalone .mjs
+ * would be a second implementation to keep in step. It therefore writes the
+ * same "no readable code" placeholder the migration uses, and the owner
+ * generates a real one from Settings.
  *
  * Deliberately plain SQL over the pg driver rather than the Prisma client:
  * this runs outside Next's module resolution, and there is no TypeScript
@@ -95,9 +103,13 @@ try {
   if (householdId) {
     console.log(`household already exists: ${householdId}`);
   } else {
+    // codeIndex is NOT NULL and UNIQUE. 'unset:' || id is unique and can never
+    // equal a real 64-hex HMAC, so no code anyone types resolves to this
+    // household until an owner generates one. Empty codeCiphertext is what the
+    // app reads as "no readable code".
     const created = await client.query(
-      `INSERT INTO "Household" (id, name, "timeZone", "createdAt", "updatedAt")
-       VALUES (gen_random_uuid()::text, $1, $2, now(), now())
+      `INSERT INTO "Household" (id, name, "timeZone", "codeIndex", "codeCiphertext", "createdAt", "updatedAt")
+       VALUES (gen_random_uuid()::text, $1, $2, 'unset:' || gen_random_uuid()::text, '', now(), now())
        RETURNING id`,
       [HOUSEHOLD_NAME, HOUSEHOLD_TIME_ZONE],
     );
@@ -121,14 +133,24 @@ try {
   }
   console.log(`upserted ${MEMBERS.length} members`);
 
-  // Put every existing login in this household; nothing creates one in the UI yet.
-  const attached = await client.query(
-    `UPDATE "User" SET "householdId" = $1, "updatedAt" = now()
-     WHERE "householdId" IS DISTINCT FROM $1 RETURNING email`,
-    [householdId],
-  );
-  if (attached.rowCount) {
-    console.log(`attached users: ${attached.rows.map((r) => r.email).join(", ")}`);
+  // Only the addresses named in HOUSEHOLD_USER_LINKS are attached, and only if
+  // they belong to no household yet.
+  //
+  // This deliberately replaces an earlier blanket UPDATE that put EVERY login
+  // in this household. That was harmless while one family used the app; now
+  // that anyone can sign up, it would have pulled unrelated people's accounts
+  // — and their calendars — into this household on the next seed run.
+  const linkedEmails = USER_LINKS.map((link) => link.email).filter(Boolean);
+  if (linkedEmails.length) {
+    const attached = await client.query(
+      `UPDATE "User" SET "householdId" = $1, "householdRole" = 'OWNER', "updatedAt" = now()
+       WHERE email = ANY($2::text[]) AND "householdId" IS NULL
+       RETURNING email`,
+      [householdId, linkedEmails],
+    );
+    if (attached.rowCount) {
+      console.log(`attached owners: ${attached.rows.map((r) => r.email).join(", ")}`);
+    }
   }
 
   for (const link of USER_LINKS) {
@@ -145,6 +167,7 @@ try {
 
   await client.query("COMMIT");
   console.log("\nseed complete");
+  console.log("Generate this household's invite code from Settings before inviting anyone.");
 } catch (error) {
   await client.query("ROLLBACK");
   console.error("seed failed, rolled back:", error.message);
