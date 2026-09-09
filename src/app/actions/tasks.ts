@@ -6,10 +6,15 @@ import { requireHousehold } from "@/lib/household";
 import {
   createTask,
   deleteTask,
+  moveTaskToStatus,
   setTaskCompletion,
+  setTaskDueAt,
+  setTaskPriority,
   TIMES_OF_DAY,
   type TimeOfDay,
 } from "@/lib/tasks";
+import { toTaskPriority, type TaskPriority } from "@/lib/task-priority";
+import { isTaskStatus, type TaskStatus } from "@/lib/task-status";
 
 const MAX_TITLE_LENGTH = 200;
 
@@ -55,6 +60,9 @@ export async function addTask(formData: FormData) {
     title,
     memberId,
     timeOfDay: readTimeOfDay(formData.get("timeOfDay")),
+    // Falls back to MEDIUM rather than rejecting: an unset priority means
+    // "normal", which is a valid thing for the form to leave alone.
+    priority: toTaskPriority(formData.get("priority")),
     icon: icon || null,
   });
 
@@ -76,6 +84,52 @@ export async function toggleTask(taskId: string, isComplete: boolean) {
 export async function removeTask(taskId: string) {
   const { household } = await requireHousehold();
   await deleteTask(household.id, taskId);
+  revalidatePath("/tasks");
+  revalidatePath("/calendar");
+}
+
+/**
+ * Drag-and-drop between the board's columns.
+ *
+ * `fallbackDueAt` is computed in the browser and only consulted when scheduling
+ * a task that has no date yet: the server runs in UTC, so it is the wrong place
+ * to decide what "today at nine" means for the person doing the dragging. The
+ * calendar's event actions take client-computed Dates for the same reason.
+ */
+export async function moveTask(
+  taskId: string,
+  status: string,
+  fallbackDueAt: Date,
+) {
+  const { household, userId } = await requireHousehold();
+  if (!isTaskStatus(status)) throw new Error(`Unknown task status "${status}".`);
+  if (Number.isNaN(fallbackDueAt.getTime())) {
+    throw new Error("That is not a valid date.");
+  }
+
+  await moveTaskToStatus(household.id, taskId, status satisfies TaskStatus, {
+    completedByMemberId: currentMemberId(household.members, userId),
+    fallbackDueAt,
+  });
+
+  revalidatePath("/tasks");
+  revalidatePath("/calendar");
+}
+
+export async function changeTaskPriority(taskId: string, priority: string) {
+  const { household } = await requireHousehold();
+  await setTaskPriority(household.id, taskId, toTaskPriority(priority) satisfies TaskPriority);
+  revalidatePath("/tasks");
+}
+
+/** Passing null clears the date, which moves the task back to the backlog. */
+export async function rescheduleTask(taskId: string, dueAt: Date | null) {
+  const { household } = await requireHousehold();
+  if (dueAt && Number.isNaN(dueAt.getTime())) {
+    throw new Error("That is not a valid date.");
+  }
+
+  await setTaskDueAt(household.id, taskId, dueAt);
   revalidatePath("/tasks");
   revalidatePath("/calendar");
 }

@@ -31,6 +31,8 @@ export default async function DashboardLayout({
       <AppSidebar
         user={signedInUser}
         householdName={household.name}
+        householdColor={household.color}
+        householdIconKey={household.icon}
         members={household.members.map((member) => ({
           id: member.id,
           name: member.name,

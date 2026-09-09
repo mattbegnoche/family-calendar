@@ -1,12 +1,12 @@
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DAYS_PER_WEEK = 7;
 
-/** Date.getDay() index for Monday, which is where CalendarKit's week view starts. */
+/** Date.getDay() index for Monday, where the calendar's week view starts. */
 const MONDAY = 1;
 
 /**
  * Local (not UTC) start of the Monday-anchored week containing `date`, matching
- * the week CalendarKit renders. Deliberately plain local-date math — anything
+ * the week the calendar renders. Deliberately plain local-date math — anything
  * timezone-aware belongs in the sync layer, not here.
  */
 export function startOfWeek(date: Date): Date {

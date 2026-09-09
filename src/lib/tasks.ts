@@ -1,6 +1,8 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import type { TaskPriority } from "@/lib/task-priority";
+import type { TaskStatus } from "@/lib/task-status";
 
 /** The three columns the tasks page renders, in display order. */
 export const TIMES_OF_DAY = ["MORNING", "AFTERNOON", "EVENING"] as const;
@@ -27,6 +29,7 @@ export interface TaskInput {
   title: string;
   memberId: string;
   timeOfDay: TimeOfDay;
+  priority: TaskPriority;
   icon?: string | null;
   notes?: string | null;
   dueAt?: Date | null;
@@ -38,6 +41,7 @@ const TASK_SELECT = {
   notes: true,
   icon: true,
   timeOfDay: true,
+  priority: true,
   dueAt: true,
   dueAllDay: true,
   completedAt: true,
@@ -81,6 +85,7 @@ export async function createTask(
       title: input.title,
       memberId: input.memberId,
       timeOfDay: input.timeOfDay,
+      priority: input.priority,
       icon: input.icon ?? null,
       notes: input.notes ?? null,
       dueAt: input.dueAt ?? null,
@@ -110,5 +115,96 @@ export async function setTaskCompletion(
 
 export async function deleteTask(householdId: string, taskId: string) {
   const result = await prisma.task.deleteMany({ where: { id: taskId, householdId } });
+  if (result.count === 0) throw new Error(`No task ${taskId} in this household`);
+}
+
+/**
+ * What moving a task into a column actually changes.
+ *
+ * Split out of moveTaskToStatus so the mapping reads as three flat cases rather
+ * than a nested ternary — this is the whole meaning of the Kanban board, and it
+ * is the part worth being able to read at a glance.
+ */
+function statusUpdate(
+  status: TaskStatus,
+  existingDueAt: Date | null,
+  options: MoveTaskOptions,
+) {
+  if (status === "COMPLETED") {
+    return {
+      completedAt: new Date(),
+      completedByMemberId: options.completedByMemberId,
+    };
+  }
+
+  if (status === "SCHEDULED") {
+    return {
+      // Keeps whatever date it already had. Re-opening a finished task must not
+      // silently move it somewhere else on the calendar.
+      dueAt: existingDueAt ?? options.fallbackDueAt,
+      completedAt: null,
+      completedByMemberId: null,
+    };
+  }
+
+  // BACKLOG is the absence of both: no date, not done.
+  return { dueAt: null, completedAt: null, completedByMemberId: null };
+}
+
+export interface MoveTaskOptions {
+  /** The member checking it off, when the target column is COMPLETED. */
+  readonly completedByMemberId: string | null;
+  /**
+   * Used only when scheduling a task that has no date yet. Computed on the
+   * client, because the browser is the only place that knows the user's own
+   * wall clock — the same convention the calendar's event actions follow.
+   */
+  readonly fallbackDueAt: Date;
+}
+
+export async function moveTaskToStatus(
+  householdId: string,
+  taskId: string,
+  status: TaskStatus,
+  options: MoveTaskOptions,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    // Scoped by householdId, so a task id from another household resolves to
+    // nothing rather than being moved.
+    const task = await tx.task.findFirst({
+      where: { id: taskId, householdId },
+      select: { dueAt: true },
+    });
+    if (!task) throw new Error(`No task ${taskId} in this household`);
+
+    await tx.task.update({
+      where: { id: taskId },
+      data: statusUpdate(status, task.dueAt, options),
+    });
+  });
+}
+
+export async function setTaskPriority(
+  householdId: string,
+  taskId: string,
+  priority: TaskPriority,
+): Promise<void> {
+  const result = await prisma.task.updateMany({
+    where: { id: taskId, householdId },
+    data: { priority },
+  });
+  if (result.count === 0) throw new Error(`No task ${taskId} in this household`);
+}
+
+/** Clearing the date sends a task back to the backlog, by definition. */
+export async function setTaskDueAt(
+  householdId: string,
+  taskId: string,
+  dueAt: Date | null,
+): Promise<void> {
+  const result = await prisma.task.updateMany({
+    where: { id: taskId, householdId },
+    data: { dueAt },
+  });
   if (result.count === 0) throw new Error(`No task ${taskId} in this household`);
 }

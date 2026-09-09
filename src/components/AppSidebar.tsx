@@ -3,8 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calendar, LogOut, Settings, type LucideIcon } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 
+import { NavIcon } from "@/components/NavIcon";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import {
   Sidebar,
   SidebarContent,
@@ -19,8 +21,8 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { signOutUser } from "@/app/actions/auth";
+import { HouseholdGlyph, householdTileGradient } from "@/lib/household-icons";
 import { MAIN_NAV, isNavItemActive } from "@/lib/navigation";
-import { cn } from "@/lib/utils";
 
 export interface SignedInUser {
   name: string | null;
@@ -41,24 +43,6 @@ function initialsOf(user: SignedInUser): string {
     .join("");
 }
 
-/** The household tile at the top sets the pattern; every row reuses it. */
-const ICON_TILE = "flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg transition-colors";
-const ACTIVE_TILE = "bg-linear-to-br from-[#4f46e5] to-[#7c3aed] text-white shadow-sm";
-
-function NavIcon({ icon: Icon, isActive }: { icon: LucideIcon; isActive: boolean }) {
-  return (
-    <span
-      className={cn(
-        ICON_TILE,
-        isActive ? ACTIVE_TILE : "bg-sidebar-accent/60 text-sidebar-foreground/80",
-      )}
-    >
-      {/* size-5! because sidebarMenuButtonVariants forces [&_svg]:size-4. */}
-      <Icon className="size-5!" />
-    </span>
-  );
-}
-
 export interface SidebarMember {
   id: string;
   name: string;
@@ -69,23 +53,43 @@ export interface SidebarMember {
 export interface AppSidebarProps {
   user: SignedInUser;
   householdName: string;
+  /** 6-digit hex. Tints the tile below and its gradient. */
+  householdColor: string;
+  /** A key into HOUSEHOLD_ICONS; an unknown value falls back to the default. */
+  householdIconKey: string;
   members: readonly SidebarMember[];
 }
 
-export function AppSidebar({ user, householdName, members }: AppSidebarProps) {
+export function AppSidebar({
+  user,
+  householdName,
+  householdColor,
+  householdIconKey,
+  members,
+}: AppSidebarProps) {
   const pathname = usePathname();
   // The shared "Household" row is not a person, so it does not get a dot.
   const people = members.filter((member) => !member.isShared);
+  // Active page icons wear the same gradient as the household tile.
+  const activeGradient = householdTileGradient(householdColor);
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" tooltip={householdName}>
-              {/* Same indigo-to-violet ramp as the favicon and the primary token. */}
-              <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-[#4f46e5] to-[#7c3aed] text-white">
-                <Calendar className="size-5!" />
+            {/* Links to settings: the tile is where people look to change the
+                family's name, colour and icon, so it is where the edit lives. */}
+            <SidebarMenuButton
+              size="lg"
+              render={<Link href="/settings" />}
+              tooltip={householdName}
+            >
+              <div
+                className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg text-white"
+                style={{ backgroundImage: householdTileGradient(householdColor) }}
+              >
+                <HouseholdGlyph iconKey={householdIconKey} className="size-5!" />
               </div>
               <div className="grid flex-1 text-left leading-tight">
                 <span className="truncate font-semibold">{householdName}</span>
@@ -122,6 +126,7 @@ export function AppSidebar({ user, householdName, members }: AppSidebarProps) {
                     <NavIcon
                       icon={item.icon}
                       isActive={isNavItemActive(item, pathname)}
+                      activeGradient={activeGradient}
                     />
                     <span className="font-medium">{item.title}</span>
                   </SidebarMenuButton>
@@ -166,6 +171,8 @@ export function AppSidebar({ user, householdName, members }: AppSidebarProps) {
             </SidebarMenuButton>
           </SidebarMenuItem>
 
+          <ThemeToggle />
+
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
@@ -173,7 +180,11 @@ export function AppSidebar({ user, householdName, members }: AppSidebarProps) {
               isActive={pathname.startsWith("/settings")}
               tooltip="Settings"
             >
-              <NavIcon icon={Settings} isActive={pathname.startsWith("/settings")} />
+              <NavIcon
+                icon={Settings}
+                isActive={pathname.startsWith("/settings")}
+                activeGradient={activeGradient}
+              />
               <span className="font-medium">Settings</span>
             </SidebarMenuButton>
           </SidebarMenuItem>

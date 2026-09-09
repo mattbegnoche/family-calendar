@@ -29,12 +29,20 @@ model User {
   householdId String?
   household   Household? @relation(fields: [householdId], references: [id], onDelete: SetNull)
 
+  // Null exactly when householdId is null. The creator of a household is its
+  // OWNER; everyone approved afterwards is an ADULT. Only OWNERs may read or
+  // rotate the family code and act on join requests.
+  householdRole HouseholdRole?
+
   // The member row this login represents, if any. Optional in both directions:
   // adults have both, kids have a member and no login.
   member Member?
 
   createdEvents Event[] @relation("EventAuthor")
   createdTasks  Task[]  @relation("TaskAuthor")
+
+  joinRequest          JoinRequest?  @relation("JoinRequestApplicant")
+  reviewedJoinRequests JoinRequest[] @relation("JoinRequestReviewer")
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
@@ -60,6 +68,10 @@ model Account {
   session_state String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Calendars this account's tokens are used to read. Only Google accounts
+  // that granted the calendar scopes (see src/lib/google/scopes.ts) ever get one.
+  calendarConnections CalendarConnection[]
 
   @@unique([provider, providerAccountId]) // -> where: { provider_providerAccountId }
   @@index([userId])
@@ -101,10 +113,33 @@ model Household {
   // thing regardless of which member's device is looking at it.
   timeZone String @default("America/New_York")
 
-  users   User[]
-  members Member[]
-  events  Event[]
-  tasks   Task[]
+  // --- Invite code ---------------------------------------------------------
+  // Never stored in plaintext. See src/lib/family-code.ts for why there are
+  // two columns rather than one: `codeIndex` is a deterministic HMAC so a
+  // typed code can be looked up, `codeCiphertext` is AES-256-GCM so an owner
+  // can read the code back to share it. Both are keyed by FAMILY_CODE_SECRET.
+  //
+  // @unique on codeIndex is what makes join an index seek instead of a scan,
+  // and it structurally prevents two households sharing a code.
+  codeIndex      String   @unique
+  codeCiphertext String
+  codeRotatedAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  // --- Branding ------------------------------------------------------------
+  // The tile at the top of the sidebar. `icon` is a KEY into the allow-list in
+  // src/lib/household-icons.ts, never a component name: the value is rendered
+  // by lookup, so an unknown string falls back to the default instead of
+  // reaching the renderer. VarChar(7) on colour matches Member.color and is
+  // CHECK-constrained to 6-digit hex for the same reason.
+  color String @default("#4f46e5") @db.VarChar(7)
+  icon  String @default("calendar")
+
+  users        User[]
+  members      Member[]
+  events       Event[]
+  tasks               Task[]
+  joinRequests        JoinRequest[]
+  calendarConnections CalendarConnection[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
@@ -117,6 +152,16 @@ enum TimeOfDay {
   MORNING
   AFTERNOON
   EVENING
+}
+
+/// How urgent a task is. Four levels rather than a number: a family needs to
+/// tell "whenever" from "before school", not to rank thirty items against each
+/// other. MEDIUM is the default so an unfilled field means "normal", not "low".
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
 }
 
 enum MemberKind {
@@ -137,7 +182,7 @@ model Member {
   // mechanically while the primary key moves to a cuid.
   slug String
 
-  name String
+  name      String
   // VarChar(7) earns its place here: src/lib/event-colors.ts builds CSS fills
   // by string-concatenating alpha onto this value ("#4f46e5" + "15"), so
   // anything but 6-digit hex silently produces an invalid colour. The matching
@@ -154,9 +199,10 @@ model Member {
   userId String? @unique
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  events         Event[]
-  assignedTasks  Task[]  @relation("TaskAssignee")
-  completedTasks Task[]  @relation("TaskCompleter")
+  events              Event[]
+  assignedTasks       Task[]               @relation("TaskAssignee")
+  completedTasks      Task[]               @relation("TaskCompleter")
+  calendarConnections CalendarConnection[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
@@ -225,6 +271,8 @@ model Task {
   /// Which column the task appears in on the tasks page.
   timeOfDay TimeOfDay @default(MORNING)
 
+  priority TaskPriority @default(MEDIUM)
+
   // Optional exact time. When set, the task is also placed on the calendar
   // grid; without one it lives only in the task list.
   dueAt     DateTime? @db.Timestamptz(3)
@@ -247,4 +295,98 @@ model Task {
   @@index([householdId, completedAt]) // the open-tasks list
   @@index([memberId])
   @@index([completedByMemberId])
+}
+
+/// Who may administer a household. Deliberately coarse: a family does not need
+/// a permission matrix, it needs "the people who set this up" and "everyone
+/// else with a login".
+enum HouseholdRole {
+  OWNER
+  ADULT
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+/// Someone who typed a valid family code and is waiting on an owner.
+///
+/// Knowing the code is not by itself enough to get in — approval is a second,
+/// human gate, so a code read over a shoulder or forwarded by accident does not
+/// silently hand out access to the family calendar.
+model JoinRequest {
+  id          String    @id @default(cuid())
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  // @unique, not just indexed: a user belongs to one household, so they can
+  // have at most one request outstanding anywhere. Re-applying replaces the
+  // previous row rather than queueing a second one.
+  userId String @unique
+  user   User   @relation("JoinRequestApplicant", fields: [userId], references: [id], onDelete: Cascade)
+
+  // What the applicant wants to be called on the calendar. Held here rather
+  // than written straight to Member so a pending request creates nothing in
+  // the household until an owner says yes.
+  requestedName  String
+  requestedColor String @db.VarChar(7)
+
+  status JoinRequestStatus @default(PENDING)
+
+  reviewedAt   DateTime? @db.Timestamptz(3)
+  reviewedById String?
+  reviewedBy   User?     @relation("JoinRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([householdId, status]) // the owner's pending-approvals list
+  @@index([reviewedById])
+}
+
+// ============================================================================
+// Google Calendar connections
+// ============================================================================
+
+/// One Google calendar whose events are shown on the family calendar.
+///
+/// Read-only by design, for now: nothing is persisted from Google. Each
+/// calendar-page render pulls the window straight through the API using the
+/// linked Account's tokens, so this row is purely "which calendar, read with
+/// whose tokens, drawn in whose column". Caching events locally, and writing
+/// them back, are later steps and would hang off this same row.
+model CalendarConnection {
+  id          String    @id @default(cuid())
+  householdId String
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  // The linked Google account whose refresh token reads this calendar.
+  // Cascade: removing the account row takes every calendar it was reading.
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  // Which column imported events land in. Restrict matches Event and Task:
+  // members are archived, never hard-deleted, once anything points at them.
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Restrict)
+
+  // Google's id for the calendar, e.g. "family@group.calendar.google.com".
+  googleCalendarId String
+  // Google's name for it at connect time. A label, not a source of truth.
+  summary String
+  // The address of the Google account, taken from its primary calendar when
+  // the connection was made. Auth.js stores no email on Account, and this is
+  // how Settings says whose calendar a row is without a round trip to Google.
+  accountEmail String
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  // Also serves as the householdId index. Stops two parents connecting the
+  // same shared calendar through their own accounts and doubling every event.
+  @@unique([householdId, googleCalendarId])
+  @@index([accountId])
+  @@index([memberId]) // FK lookup for ON DELETE RESTRICT
 }

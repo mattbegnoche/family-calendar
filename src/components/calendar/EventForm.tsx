@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { CalendarEvent } from "calendarkit-pro";
+import { useState, type FormEvent } from "react";
 
+import { Dialog } from "@/components/calendar/Dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { CalendarSource } from "@/components/MyCalendar";
+import { DEFAULT_EVENT_MINUTES } from "@/lib/calendar/time";
+import type { CalendarEvent, CalendarSource, EventDraft } from "@/lib/calendar/types";
 
 const MS_PER_MINUTE = 60 * 1000;
-const DEFAULT_DURATION_MINUTES = 60;
 
 /** datetime-local wants local wall-clock "YYYY-MM-DDTHH:mm", not an ISO UTC string. */
 function toLocalInputValue(date: Date): string {
@@ -20,100 +20,70 @@ function toLocalInputValue(date: Date): string {
   );
 }
 
-function toDateInputValue(date: Date): string {
-  return toLocalInputValue(date).slice(0, 10);
+function toDateInputValue(value: string): string {
+  return value.slice(0, 10);
+}
+
+/** Where a new event starts out: what was clicked or dragged on the grid. */
+export interface EventSeed {
+  readonly start: Date;
+  readonly end: Date;
+  readonly allDay: boolean;
+  readonly calendarId?: string;
 }
 
 export interface EventFormProps {
-  isOpen: boolean;
-  onClose: () => void;
-  event?: CalendarEvent | null;
-  initialDate?: Date;
-  onSave: (event: Partial<CalendarEvent>) => void;
-  onDelete?: (eventId: string) => void;
-  members: readonly CalendarSource[];
+  readonly isOpen: boolean;
+  readonly onClose: () => void;
+  /** The event being edited, or null when creating one. */
+  readonly event: CalendarEvent | null;
+  readonly seed: EventSeed | null;
+  readonly members: readonly CalendarSource[];
+  readonly onSave: (draft: EventDraft) => void;
+  readonly onDelete?: (eventId: string) => void;
 }
 
 /**
- * Replaces CalendarKit's built-in modal via `renderEventForm`.
- *
- * The built-in one carries Reminders, Guests and Attachments, none of which
- * this app stores. Rather than hiding them with CSS — a brittle override on
- * third-party markup — this renders only the fields that map to columns on the
- * Event table.
+ * Only the fields that map to columns on the Event table. All-day inputs
+ * carry a date only; they are anchored to local midnight on submit so the
+ * event lands on the day picked rather than shifting across a zone.
  */
-export function EventForm({
-  isOpen,
-  onClose,
-  event,
-  initialDate,
-  onSave,
-  onDelete,
-  members,
-}: EventFormProps) {
-  const isEditing = Boolean(event?.id);
+export function EventForm({ isOpen, onClose, event, seed, members, onSave, onDelete }: EventFormProps) {
+  const isEditing = event !== null;
 
-  const [title, setTitle] = useState("");
-  const [calendarId, setCalendarId] = useState("");
-  const [allDay, setAllDay] = useState(false);
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [location, setLocation] = useState("");
-  const [description, setDescription] = useState("");
+  // Initial values come straight from props: the parent mounts a fresh form
+  // each time the editor opens, so there is nothing to reset later.
+  const startsAt = event?.start ?? seed?.start ?? new Date();
+  const endsAt =
+    event?.end ?? seed?.end ?? new Date(startsAt.getTime() + DEFAULT_EVENT_MINUTES * MS_PER_MINUTE);
 
-  // Reset whenever the modal opens for a different event.
-  useEffect(() => {
-    if (!isOpen) return;
-    const startsAt = event?.start ?? initialDate ?? new Date();
-    const endsAt =
-      event?.end ?? new Date(startsAt.getTime() + DEFAULT_DURATION_MINUTES * MS_PER_MINUTE);
+  const [title, setTitle] = useState(event?.title ?? "");
+  const [calendarId, setCalendarId] = useState(
+    event?.calendarId ?? seed?.calendarId ?? members[0]?.id ?? "",
+  );
+  const [allDay, setAllDay] = useState(event?.allDay ?? seed?.allDay ?? false);
+  const [start, setStart] = useState(() => toLocalInputValue(startsAt));
+  const [end, setEnd] = useState(() => toLocalInputValue(endsAt));
+  const [location, setLocation] = useState(event?.location ?? "");
+  const [description, setDescription] = useState(event?.description ?? "");
 
-    setTitle(event?.title ?? "");
-    setCalendarId(event?.calendarId ?? members[0]?.id ?? "");
-    setAllDay(event?.allDay ?? false);
-    setStart(toLocalInputValue(startsAt));
-    setEnd(toLocalInputValue(endsAt));
-    setLocation(typeof event?.location === "string" ? event.location : "");
-    setDescription(event?.description ?? "");
-  }, [isOpen, event, initialDate, members]);
-
-  if (!isOpen) return null;
-
-  const handleSubmit = (submitEvent: React.FormEvent) => {
-    submitEvent.preventDefault();
-    // All-day inputs carry a date only; anchor them to local midnight so they
-    // land on the day the user picked rather than shifting across a zone.
-    const startsAt = new Date(allDay ? `${start.slice(0, 10)}T00:00` : start);
-    const endsAt = new Date(allDay ? `${end.slice(0, 10)}T00:00` : end);
-
+  const handleSubmit = (submit: FormEvent) => {
+    submit.preventDefault();
     onSave({
       title: title.trim(),
       calendarId,
       allDay,
-      start: startsAt,
-      end: endsAt,
+      start: new Date(allDay ? `${toDateInputValue(start)}T00:00` : start),
+      end: new Date(allDay ? `${toDateInputValue(end)}T00:00` : end),
       location: location.trim() || undefined,
       description: description.trim() || undefined,
     });
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={isEditing ? "Edit event" : "New event"}
-      onClick={(clickEvent) => {
-        if (clickEvent.target === clickEvent.currentTarget) onClose();
-      }}
-    >
-      <form
-        onSubmit={handleSubmit}
-        className="flex max-h-full w-full max-w-md flex-col gap-4 overflow-y-auto rounded-2xl border bg-background p-5 shadow-xl"
-      >
-        <h2 className="text-lg font-semibold">
-          {isEditing ? "Edit event" : "New event"}
-        </h2>
+    <Dialog isOpen={isOpen} onClose={onClose} label={isEditing ? "Edit event" : "New event"}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <h2 className="text-lg font-semibold">{isEditing ? "Edit event" : "New event"}</h2>
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="event-title">Title</Label>
@@ -159,7 +129,7 @@ export function EventForm({
             <Input
               id="event-start"
               type={allDay ? "date" : "datetime-local"}
-              value={allDay ? toDateInputValue(new Date(start)) : start}
+              value={allDay ? toDateInputValue(start) : start}
               onChange={(changed) => setStart(changed.target.value)}
               required
             />
@@ -169,7 +139,7 @@ export function EventForm({
             <Input
               id="event-end"
               type={allDay ? "date" : "datetime-local"}
-              value={allDay ? toDateInputValue(new Date(end)) : end}
+              value={allDay ? toDateInputValue(end) : end}
               onChange={(changed) => setEnd(changed.target.value)}
               required
             />
@@ -199,7 +169,7 @@ export function EventForm({
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t pt-4">
-          {isEditing && onDelete && event?.id ? (
+          {isEditing && onDelete ? (
             <Button
               type="button"
               variant="ghost"
@@ -219,6 +189,6 @@ export function EventForm({
           </div>
         </div>
       </form>
-    </div>
+    </Dialog>
   );
 }

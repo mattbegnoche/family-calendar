@@ -2,26 +2,30 @@
 
 import { revalidatePath } from "next/cache";
 
-import { toCalendarEvent } from "@/lib/adapters/calendar-kit";
+import { toCalendarEvent } from "@/lib/adapters/calendar";
+import { parseLocalEventId, readOnlyReason } from "@/lib/calendar-ids";
 import { createEvent, deleteEvent, updateEvent } from "@/lib/events";
 import { requireHousehold } from "@/lib/household";
 import type { Member } from "@/lib/household";
 
 const MAX_TITLE_LENGTH = 200;
+const CALENDAR_PATH = "/calendar";
 
 /**
- * CalendarKit ids are namespaced by the adapter ("event-…", "task-…") so the
- * two kinds can share one grid. Only events are editable here; a task that
- * happens to be rendered on the calendar must be edited from the tasks page.
+ * Calendar ids are namespaced by source (see src/lib/calendar-ids.ts) so the
+ * kinds can share one grid. Only local events are editable here; the client
+ * refuses the others first, and this is the check that holds when a request
+ * bypasses the client.
  */
 function parseEventId(calendarEventId: string): string {
-  if (!calendarEventId.startsWith("event-")) {
-    throw new Error("Only calendar events can be edited here.");
+  const eventId = parseLocalEventId(calendarEventId);
+  if (eventId === null) {
+    throw new Error(readOnlyReason(calendarEventId) ?? "Only calendar events can be edited here.");
   }
-  return calendarEventId.slice("event-".length);
+  return eventId;
 }
 
-/** CalendarKit's `calendarId` is our member slug, not the member's id. */
+/** The calendar's `calendarId` is our member slug, not the member's id. */
 function memberIdFromSlug(members: readonly Member[], slug: string | undefined): string {
   const member = slug
     ? members.find((candidate) => candidate.slug === slug)
@@ -70,7 +74,7 @@ export async function addEvent(input: NewEventInput) {
     location: input.location ?? null,
   });
 
-  revalidatePath("/calendar");
+  revalidatePath(CALENDAR_PATH);
   return toCalendarEvent(saved);
 }
 
@@ -100,19 +104,33 @@ export async function editEvent(calendarEventId: string, input: EditEventInput) 
     ...(input.location !== undefined && { location: input.location }),
   });
 
-  revalidatePath("/calendar");
+  revalidatePath(CALENDAR_PATH);
 }
 
-/** Drag-to-move and edge-resize both reduce to restating start and end. */
-export async function moveEvent(calendarEventId: string, startsAt: Date, endsAt: Date) {
+/**
+ * Drag-to-move and edge-resize both reduce to restating start and end. A drop
+ * onto another member's column in the People view also restates the member.
+ */
+export async function moveEvent(
+  calendarEventId: string,
+  startsAt: Date,
+  endsAt: Date,
+  calendarId?: string,
+) {
   const { household } = await requireHousehold();
   assertValidRange(startsAt, endsAt);
-  await updateEvent(household.id, parseEventId(calendarEventId), { startsAt, endsAt });
-  revalidatePath("/calendar");
+  await updateEvent(household.id, parseEventId(calendarEventId), {
+    startsAt,
+    endsAt,
+    ...(calendarId !== undefined && {
+      memberId: memberIdFromSlug(household.members, calendarId),
+    }),
+  });
+  revalidatePath(CALENDAR_PATH);
 }
 
 export async function removeEvent(calendarEventId: string) {
   const { household } = await requireHousehold();
   await deleteEvent(household.id, parseEventId(calendarEventId));
-  revalidatePath("/calendar");
+  revalidatePath(CALENDAR_PATH);
 }

@@ -1,12 +1,13 @@
-import MyCalendar from "@/components/MyCalendar";
+import { FamilyCalendar } from "@/components/FamilyCalendar";
+import { ImportNotice } from "@/components/calendar/ImportNotice";
 import {
-  toCalendarEvent,
-  toCalendarList,
-  toResources,
   taskToCalendarEvent,
-} from "@/lib/adapters/calendar-kit";
+  toCalendarEvent,
+  toCalendarSources,
+} from "@/lib/adapters/calendar";
 import { addDays, startOfWeek } from "@/lib/dates";
 import { listEvents } from "@/lib/events";
+import { importGoogleEvents } from "@/lib/google/import-events";
 import { requireHousehold } from "@/lib/household";
 import { listScheduledTasks } from "@/lib/tasks";
 
@@ -23,24 +24,30 @@ export default async function CalendarPage() {
     to: addDays(anchor, DAYS_AFTER),
   };
 
-  const [events, scheduledTasks] = await Promise.all([
+  const [events, scheduledTasks, google] = await Promise.all([
     listEvents(household.id, window),
     listScheduledTasks(household.id, window),
+    importGoogleEvents(household, window),
   ]);
 
   const calendarEvents = [
     ...events.map(toCalendarEvent),
     // Tasks with a time share the grid with events, in the assignee's colour.
     ...scheduledTasks.map(taskToCalendarEvent).filter((task) => task !== null),
+    // Google events are read-only and take the colour of the member they were
+    // connected to.
+    ...google.events,
   ];
 
   return (
-    <div className="h-full w-full overflow-hidden bg-background ring-slate-900/10 sm:rounded-2xl sm:shadow-lg sm:shadow-slate-900/5 sm:ring-1 dark:ring-white/10">
-      <MyCalendar
-        initialEvents={calendarEvents}
-        calendars={toCalendarList(household.members)}
-        resources={toResources(household.members)}
-      />
+    <div className="flex h-full w-full flex-col overflow-hidden bg-background ring-slate-900/10 sm:rounded-2xl sm:shadow-lg sm:shadow-slate-900/5 sm:ring-1 dark:ring-white/10">
+      <ImportNotice problems={google.problems} />
+      <div className="flex min-h-0 flex-1 flex-col">
+        <FamilyCalendar
+          initialEvents={calendarEvents}
+          sources={toCalendarSources(household.members)}
+        />
+      </div>
     </div>
   );
 }
