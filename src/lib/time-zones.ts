@@ -77,14 +77,54 @@ const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
  * Google all-day events arrive as bare "YYYY-MM-DD" strings with no zone.
  * `new Date("2026-09-04")` reads that as UTC midnight, which is still the 3rd
  * anywhere west of Greenwich, so the day has to be anchored in the household's
- * zone explicitly. The second pass covers the rare zone whose clock change
- * lands on midnight itself; a single pass would be an hour out on that day.
+ * zone explicitly. Delegates to zonedDateTime, which also copes with the rare
+ * zone whose clock change lands on midnight itself.
  */
 export function zonedMidnight(isoDate: string, timeZone: string): Date {
   const match = CALENDAR_DATE.exec(isoDate);
   if (!match) throw new RangeError(`Not a calendar date: ${isoDate}`);
   const [year, month, day] = match.slice(1).map(Number);
-  const wallClockAsUtc = Date.UTC(year, month - 1, day);
-  const firstGuess = wallClockAsUtc - zoneOffsetMs(wallClockAsUtc, timeZone);
-  return new Date(wallClockAsUtc - zoneOffsetMs(firstGuess, timeZone));
+  return zonedDateTime({ year, month, day, hour: 0, minute: 0 }, timeZone);
+}
+
+export interface WallClock {
+  readonly year: number;
+  /** 1–12. */
+  readonly month: number;
+  readonly day: number;
+  readonly hour: number;
+  readonly minute: number;
+}
+
+/** What a clock on the wall in `timeZone` shows at `instant`. */
+export function wallClockIn(instant: Date, timeZone: string): WallClock {
+  const values = new Map(
+    wallClockFormatter(timeZone)
+      .formatToParts(instant)
+      .map((part) => [part.type, Number(part.value)] as const),
+  );
+  return {
+    year: values.get("year") ?? 0,
+    month: values.get("month") ?? 0,
+    day: values.get("day") ?? 0,
+    hour: values.get("hour") ?? 0,
+    minute: values.get("minute") ?? 0,
+  };
+}
+
+/**
+ * The instant at which a wall clock in `timeZone` shows `clock`. The same
+ * two-pass offset search as zonedMidnight, so a time that does not exist on
+ * the spring-forward day resolves to the first instant after the gap rather
+ * than an hour early.
+ */
+export function zonedDateTime(clock: WallClock, timeZone: string): Date {
+  const wallClockAsUtc = Date.UTC(clock.year, clock.month - 1, clock.day, clock.hour, clock.minute);
+  const firstGuess = new Date(wallClockAsUtc - zoneOffsetMs(wallClockAsUtc, timeZone));
+  const candidate = new Date(wallClockAsUtc - zoneOffsetMs(firstGuess.getTime(), timeZone));
+  // A wall-clock time inside a spring-forward gap has no instant. The second
+  // pass then lands an hour early; the first guess is the instant just after
+  // the gap, which is what a clock that skipped ahead would show.
+  const shown = wallClockIn(candidate, timeZone);
+  return shown.hour === clock.hour && shown.minute === clock.minute ? candidate : firstGuess;
 }

@@ -3,16 +3,19 @@
 import { Calendar } from "@/components/calendar/Calendar";
 import { useFamilyEvents } from "@/hooks/use-family-events";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar/types";
+import type { WritableCalendarOption } from "@/lib/google/types";
 
 export interface FamilyCalendarProps {
   /** Events fetched on the server; the client adopts them on every render. */
   readonly initialEvents: readonly CalendarEvent[];
   /** Household members, as the calendar's toggles and People columns. */
   readonly sources: readonly CalendarSource[];
+  /** Google calendars the signed-in user may create events in. */
+  readonly googleCalendars: readonly WritableCalendarOption[];
 }
 
 /** The calendar page's client half: database-backed events wired into the grid. */
-export function FamilyCalendar({ initialEvents, sources }: FamilyCalendarProps) {
+export function FamilyCalendar({ initialEvents, sources, googleCalendars }: FamilyCalendarProps) {
   const { events, error, dismissError, createEvent, updateEvent, deleteEvent, moveEvent } =
     useFamilyEvents(initialEvents, sources);
 
@@ -43,6 +46,7 @@ export function FamilyCalendar({ initialEvents, sources }: FamilyCalendarProps) 
           onUpdate={updateEvent}
           onDelete={deleteEvent}
           onMove={moveEvent}
+          googleCalendars={googleCalendars}
         />
       </div>
     </div>

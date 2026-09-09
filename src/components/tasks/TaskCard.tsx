@@ -1,8 +1,9 @@
 "use client";
 
-import { Check, Clock, Trash2 } from "lucide-react";
+import { Check, Clock, Repeat, Trash2 } from "lucide-react";
 
 import { PriorityBadge } from "@/components/tasks/PriorityBadge";
+import { TaskIcon } from "@/components/tasks/TaskIcon";
 import type { TaskItem } from "@/lib/task-item";
 import { TASK_PRIORITY_RAIL } from "@/lib/task-priority";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,7 @@ import { cn } from "@/lib/utils";
 export interface TaskCardProps {
   task: TaskItem;
   onToggleComplete: (task: TaskItem) => void;
+  onEdit: (task: TaskItem) => void;
   onDelete: (task: TaskItem) => void;
   onDragStart: (task: TaskItem) => void;
   onDragEnd: () => void;
@@ -26,6 +28,7 @@ export interface TaskCardProps {
 export function TaskCard({
   task,
   onToggleComplete,
+  onEdit,
   onDelete,
   onDragStart,
   onDragEnd,
@@ -72,20 +75,20 @@ export function TaskCard({
           {isComplete ? <Check className="size-3" strokeWidth={3} /> : null}
         </button>
 
-        {task.icon ? (
-          <span aria-hidden className="text-base leading-tight">
-            {task.icon}
-          </span>
-        ) : null}
+        <TaskIcon iconKey={task.icon} className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 
-        <p
+        {/* The title opens the editor; mousedown is stopped so it never starts a drag. */}
+        <button
+          type="button"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={() => onEdit(task)}
           className={cn(
-            "min-w-0 flex-1 text-sm leading-snug",
+            "min-w-0 flex-1 text-left text-sm leading-snug hover:underline",
             isComplete && "line-through opacity-60",
           )}
         >
           {task.title}
-        </p>
+        </button>
 
         <button
           type="button"
@@ -114,6 +117,13 @@ export function TaskCard({
           <span className="flex items-center gap-1">
             <Clock className="size-3" />
             {task.dueLabel}
+          </span>
+        ) : null}
+
+        {task.repeatLabel ? (
+          <span className="flex items-center gap-1">
+            <Repeat className="size-3" />
+            {task.repeatLabel}
           </span>
         ) : null}
       </div>

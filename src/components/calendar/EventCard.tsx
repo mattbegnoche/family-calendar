@@ -1,8 +1,9 @@
 "use client";
 
-import { Lock } from "lucide-react";
+import { Check, Lock } from "lucide-react";
 import type { CSSProperties, KeyboardEvent } from "react";
 
+import { TaskIcon } from "@/components/tasks/TaskIcon";
 import { formatTime, formatTimeRange } from "@/lib/calendar/format";
 import type { CalendarEvent } from "@/lib/calendar/types";
 import { cn } from "@/lib/utils";
@@ -73,8 +74,15 @@ export function TimedEventCard({
       })}
     >
       <div className="flex items-start gap-1">
-        <span className="min-w-0 flex-1 truncate font-medium">{event.title}</span>
-        {event.readOnly ? <Lock className="mt-0.5 size-3 shrink-0 opacity-60" aria-label="Read-only" /> : null}
+        {event.icon ? <TaskIcon iconKey={event.icon} className="mt-px size-3.5 shrink-0" /> : null}
+        <span className={cn("min-w-0 flex-1 truncate font-medium", event.task?.isDone && "line-through opacity-60")}>
+          {event.title}
+        </span>
+        {event.task?.isDone ? (
+          <Check className="mt-0.5 size-3 shrink-0" aria-label="Done" />
+        ) : event.readOnly && !event.task ? (
+          <Lock className="mt-0.5 size-3 shrink-0 opacity-60" aria-label="Read-only" />
+        ) : null}
       </div>
       {showsTime ? (
         <div className="truncate opacity-75">{formatTimeRange(event.start, event.end)}</div>
@@ -132,8 +140,15 @@ export function EventChip({
       {showTime && !event.allDay ? (
         <span className="shrink-0 opacity-75">{formatTime(event.start)}</span>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">{event.title}</span>
-      {event.readOnly ? <Lock className="size-3 shrink-0 opacity-70" aria-label="Read-only" /> : null}
+      {event.icon ? <TaskIcon iconKey={event.icon} className="size-3.5 shrink-0" /> : null}
+      <span className={cn("min-w-0 flex-1 truncate", event.task?.isDone && "line-through opacity-60")}>
+        {event.title}
+      </span>
+      {event.task?.isDone ? (
+        <Check className="size-3 shrink-0" aria-label="Done" />
+      ) : event.readOnly && !event.task ? (
+        <Lock className="size-3 shrink-0 opacity-70" aria-label="Read-only" />
+      ) : null}
     </div>
   );
 }

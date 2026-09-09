@@ -57,6 +57,15 @@ export interface GoogleCalendarOption {
   readonly accessRole: string;
 }
 
+/** A connected Google calendar the signed-in user may create events in. */
+export interface WritableCalendarOption {
+  readonly connectionId: string;
+  readonly name: string;
+  readonly accountEmail: string;
+  /** The member whose column its events land in; the form follows it. */
+  readonly memberSlug: string;
+}
+
 export interface LinkedGoogleAccount {
   readonly id: string;
   readonly email: string;

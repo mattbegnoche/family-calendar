@@ -2,6 +2,7 @@ import "server-only";
 
 import type { CalendarEvent } from "@/lib/calendar/types";
 import type { EventWindow } from "@/lib/events";
+import { googleEditability } from "@/lib/google/editability";
 import { describeGoogleFailure } from "@/lib/google/errors";
 import { listGoogleEvents } from "@/lib/google/events";
 import { toCalendarEvents } from "@/lib/google/to-calendar-events";
@@ -41,6 +42,8 @@ const CONNECTION_SELECT = {
   summary: true,
   accountEmail: true,
   member: { select: { slug: true, color: true } },
+  // Who may edit: the account's owner, once it holds the write scope.
+  account: { select: { userId: true, scope: true } },
 } as const;
 
 type ImportConnection = Awaited<
@@ -84,6 +87,7 @@ async function importAccount(
   connections: readonly ImportConnection[],
   timeZone: string,
   window: EventWindow,
+  viewerId: string,
 ): Promise<GoogleImport> {
   let accessToken: string;
   try {
@@ -109,6 +113,7 @@ async function importAccount(
         calendarName: connection.summary,
         member: connection.member,
         timeZone,
+        editability: googleEditability(connection.account, viewerId),
       });
     }),
   );
@@ -134,6 +139,8 @@ async function importAccount(
 export async function importGoogleEvents(
   household: ImportHousehold,
   window: EventWindow,
+  /** The signed-in user: decides which Google events they may edit. */
+  viewerId: string,
 ): Promise<GoogleImport> {
   let connections: ImportConnection[];
   try {
@@ -148,7 +155,7 @@ export async function importGoogleEvents(
 
   const imports = await Promise.all(
     [...groupByAccount(connections)].map(([accountId, group]) =>
-      importAccount(accountId, group, household.timeZone, window),
+      importAccount(accountId, group, household.timeZone, window, viewerId),
     ),
   );
   return mergeImports(imports);

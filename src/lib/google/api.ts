@@ -17,19 +17,36 @@ export async function googleCalendarGet<T>(
   params: Record<string, string>,
   operation: string,
 ): Promise<T> {
+  const response = await googleCalendarRequest(accessToken, "GET", path, params, undefined, operation);
+  return (await response.json()) as T;
+}
+
+/** Any Calendar API call. Throws GoogleApiError on a non-2xx answer; the caller reads the body. */
+export async function googleCalendarRequest(
+  accessToken: string,
+  method: "GET" | "POST" | "PATCH" | "DELETE",
+  path: string,
+  params: Record<string, string>,
+  body: unknown,
+  operation: string,
+): Promise<Response> {
   const url = new URL(`${GOOGLE_CALENDAR_API}${path}`);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
 
   const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    method,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
     cache: "no-store",
   });
 
   if (!response.ok) {
     throw new GoogleApiError(response.status, operation, await response.text());
   }
-
-  return (await response.json()) as T;
+  return response;
 }

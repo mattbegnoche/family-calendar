@@ -43,8 +43,26 @@ export function isGoogleEventId(calendarEventId: string): boolean {
   return calendarEventId.startsWith(GOOGLE_EVENT_PREFIX);
 }
 
+export interface GoogleEventRef {
+  readonly connectionId: string;
+  readonly googleId: string;
+}
+
+/**
+ * The connection and Google event behind a calendar id, or null for any other
+ * kind. Connection ids are cuids (letters and digits only) and Google event
+ * ids never contain "-", so the first dash after the prefix is the seam.
+ */
+export function parseGoogleEventId(calendarEventId: string): GoogleEventRef | null {
+  if (!isGoogleEventId(calendarEventId)) return null;
+  const rest = calendarEventId.slice(GOOGLE_EVENT_PREFIX.length);
+  const seam = rest.indexOf("-");
+  if (seam <= 0 || seam === rest.length - 1) return null;
+  return { connectionId: rest.slice(0, seam), googleId: rest.slice(seam + 1) };
+}
+
 export const GOOGLE_EVENT_READ_ONLY_MESSAGE =
-  "Events from Google Calendar are read-only here for now. Change them in Google Calendar.";
+  "This Google Calendar event can't be edited here.";
 
 /**
  * Why an id cannot be edited on the calendar, phrased for the person who just

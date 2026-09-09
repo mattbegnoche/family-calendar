@@ -1,7 +1,7 @@
 "use client";
 
 import { addDays, differenceInCalendarDays, differenceInMilliseconds } from "date-fns";
-import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { hasMovedPastThreshold, locateInGrid } from "@/components/calendar/geometry";
 import {
@@ -219,7 +219,16 @@ export function useGridDrag({
   onCreate,
   onMove,
 }: UseGridDragOptions): GridDrag {
+  // The gesture is tracked in a ref and mirrored into state: handlers need the
+  // latest value synchronously, and the callbacks they fire must run from the
+  // event handler, never from inside a state updater, which React treats as
+  // render-phase code and where updating another component is an error.
   const [state, setState] = useState<DragState>(IDLE);
+  const gesture = useRef<DragState>(IDLE);
+  const commit = useCallback((next: DragState) => {
+    gesture.current = next;
+    setState(next);
+  }, []);
 
   const locate = useCallback(
     (clientX: number, clientY: number) => {
@@ -241,9 +250,16 @@ export function useGridDrag({
       // A read-only event still opens on click; it just never becomes a drag.
       if (mode === null) {
         if (event) {
-          setState({
+          commit({
             phase: "pending",
-            origin: { mode: "move", event, ...point, clientX: pointer.clientX, clientY: pointer.clientY, grabOffsetMinutes: 0 },
+            origin: {
+              mode: "move",
+              event,
+              ...point,
+              clientX: pointer.clientX,
+              clientY: pointer.clientY,
+              grabOffsetMinutes: 0,
+            },
           });
         }
         return;
@@ -255,7 +271,7 @@ export function useGridDrag({
           : 0;
 
       pointer.currentTarget.setPointerCapture(pointer.pointerId);
-      setState({
+      commit({
         phase: "pending",
         origin: {
           mode,
@@ -268,29 +284,29 @@ export function useGridDrag({
         },
       });
     },
-    [columns, events, locate],
+    [columns, commit, events, locate],
   );
 
   const onPointerMove = useCallback(
     (pointer: ReactPointerEvent<HTMLElement>) => {
-      setState((current) => {
-        if (current.phase === "idle") return current;
-        const point = locate(pointer.clientX, pointer.clientY);
-        if (!point) return current;
+      const current = gesture.current;
+      if (current.phase === "idle") return;
+      const point = locate(pointer.clientX, pointer.clientY);
+      if (!point) return;
 
-        if (current.phase === "pending") {
-          const moved = hasMovedPastThreshold(
-            pointer.clientX - current.origin.clientX,
-            pointer.clientY - current.origin.clientY,
-          );
-          // A read-only event was captured only so a click can open it.
-          if (!moved || current.origin.event?.readOnly) return current;
-          return { phase: "active", origin: current.origin, ...point };
-        }
-        return { ...current, ...point };
-      });
+      if (current.phase === "pending") {
+        const moved = hasMovedPastThreshold(
+          pointer.clientX - current.origin.clientX,
+          pointer.clientY - current.origin.clientY,
+        );
+        // A read-only event was captured only so a click can open it.
+        if (!moved || current.origin.event?.readOnly) return;
+        commit({ phase: "active", origin: current.origin, ...point });
+        return;
+      }
+      commit({ ...current, ...point });
     },
-    [locate],
+    [commit, locate],
   );
 
   const finish = useCallback(
@@ -341,25 +357,24 @@ export function useGridDrag({
       if (pointer.currentTarget.hasPointerCapture(pointer.pointerId)) {
         pointer.currentTarget.releasePointerCapture(pointer.pointerId);
       }
-      setState((current) => {
-        finish(current);
-        return IDLE;
-      });
+      const current = gesture.current;
+      commit(IDLE);
+      finish(current);
     },
-    [finish],
+    [commit, finish],
   );
 
-  const onPointerCancel = useCallback(() => setState(IDLE), []);
+  const onPointerCancel = useCallback(() => commit(IDLE), [commit]);
 
   // Escape abandons a drag in progress.
   useEffect(() => {
     if (state.phase !== "active") return;
     const onKeyDown = (keyboard: KeyboardEvent) => {
-      if (keyboard.key === "Escape") setState(IDLE);
+      if (keyboard.key === "Escape") commit(IDLE);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [state.phase]);
+  }, [commit, state.phase]);
 
   return {
     state,

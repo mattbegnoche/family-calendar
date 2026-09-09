@@ -16,6 +16,7 @@ export interface KanbanBoardProps {
   tasks: readonly TaskItem[];
   onMove: (task: TaskItem, status: TaskStatus) => void;
   onToggleComplete: (task: TaskItem) => void;
+  onEdit: (task: TaskItem) => void;
   onDelete: (task: TaskItem) => void;
 }
 
@@ -23,6 +24,7 @@ export function KanbanBoard({
   tasks,
   onMove,
   onToggleComplete,
+  onEdit,
   onDelete,
 }: KanbanBoardProps) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -83,6 +85,7 @@ export function KanbanBoard({
                   key={task.id}
                   task={task}
                   onToggleComplete={onToggleComplete}
+                  onEdit={onEdit}
                   onDelete={onDelete}
                   onDragStart={(dragged) => setDraggingId(dragged.id)}
                   onDragEnd={() => {

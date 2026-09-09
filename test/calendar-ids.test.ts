@@ -5,6 +5,7 @@ import {
   googleEventId,
   isGoogleEventId,
   localEventId,
+  parseGoogleEventId,
   parseLocalEventId,
   pendingEventId,
   readOnlyReason,
@@ -29,6 +30,21 @@ describe("googleEventId", () => {
     expect(googleEventId("c1", "g1")).not.toBe(googleEventId("c2", "g1"));
     expect(isGoogleEventId(googleEventId("c1", "g1"))).toBe(true);
     expect(isGoogleEventId(localEventId("g1"))).toBe(false);
+  });
+});
+
+describe("parseGoogleEventId", () => {
+  it("splits a Google id back into its connection and event", () => {
+    expect(parseGoogleEventId(googleEventId("cm1abc", "ev_20260910T120000Z"))).toEqual({
+      connectionId: "cm1abc",
+      googleId: "ev_20260910T120000Z",
+    });
+  });
+
+  it("returns null for other kinds and for malformed ids", () => {
+    expect(parseGoogleEventId(localEventId("abc"))).toBeNull();
+    expect(parseGoogleEventId("google-nodash")).toBeNull();
+    expect(parseGoogleEventId("google-cm1abc-")).toBeNull();
   });
 });
 

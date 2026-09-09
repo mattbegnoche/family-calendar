@@ -28,6 +28,7 @@ import type {
   CalendarView,
   EventDraft,
 } from "@/lib/calendar/types";
+import type { WritableCalendarOption } from "@/lib/google/types";
 
 export interface CalendarProps {
   readonly events: readonly CalendarEvent[];
@@ -36,6 +37,8 @@ export interface CalendarProps {
   readonly onUpdate: (eventId: string, draft: EventDraft) => void;
   readonly onDelete: (eventId: string) => void;
   readonly onMove: (event: CalendarEvent, start: Date, end: Date, calendarId?: string) => void;
+  /** Google calendars the signed-in user may create events in. */
+  readonly googleCalendars?: readonly WritableCalendarOption[];
   readonly initialView?: CalendarView;
 }
 
@@ -106,6 +109,7 @@ export function Calendar({
   onUpdate,
   onDelete,
   onMove,
+  googleCalendars = [],
   initialView = "week",
 }: CalendarProps) {
   const [view, setView] = useState<CalendarView>(initialView);
@@ -296,11 +300,18 @@ export function Calendar({
           event={editor.kind === "edit" ? editor.event : null}
           seed={editor.kind === "create" ? editor.seed : null}
           members={sources}
+          googleCalendars={googleCalendars}
           onSave={handleSave}
           onDelete={handleDelete}
         />
       ) : null}
-      <EventDetails event={editor.kind === "details" ? editor.event : null} onClose={closeEditor} />
+      <EventDetails
+        // Keyed so the card's edit state resets for each event it shows.
+        key={editor.kind === "details" ? editor.event.id : "closed"}
+        event={editor.kind === "details" ? editor.event : null}
+        members={sources.map((source) => ({ id: source.memberId, name: source.label, color: source.color }))}
+        onClose={closeEditor}
+      />
     </div>
   );
 }

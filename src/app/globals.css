@@ -116,14 +116,16 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* The sidebar shares the content area's slate: one surface, not a grey
+     panel beside a navy one. */
+  --sidebar: var(--background);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--muted);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
 }
 
 @layer base {
@@ -157,5 +159,43 @@
   .event-solid {
     background-color: var(--event-color);
     color: white;
+  }
+}
+
+/*
+ * Family theme. The dashboard layout sets --family (and --family-foreground,
+ * white or near-black to suit it) on the sidebar provider, and this points the
+ * accent tokens at it. Everything that reads --primary — buttons, the active
+ * view, today's highlight, focus rings — follows the family colour without a
+ * single component naming it. Dark mode lifts the colour toward white so it
+ * stays legible on the slate surface, as the fixed palette above does.
+ */
+@layer base {
+  .family-theme {
+    --primary: var(--family);
+    --primary-foreground: var(--family-foreground);
+    --ring: var(--family);
+    --accent: color-mix(in oklch, var(--family) 12%, var(--background));
+    --accent-foreground: color-mix(in oklch, var(--family) 65%, var(--foreground));
+    --sidebar-primary: var(--family);
+  }
+  .dark .family-theme {
+    --primary: color-mix(in oklch, var(--family) 70%, white);
+    --primary-foreground: color-mix(in oklch, var(--family) 30%, black);
+    --ring: color-mix(in oklch, var(--family) 70%, white);
+    --accent: color-mix(in oklch, var(--family) 22%, var(--background));
+    --accent-foreground: var(--foreground);
+  }
+}
+
+/* Sidebar icon tiles at rest: a soft wash of the family colour, icon in the colour itself. */
+@layer components {
+  .nav-tile-idle {
+    background-color: color-mix(in srgb, var(--family, var(--primary)) 14%, transparent);
+    color: var(--family, var(--primary));
+  }
+  .dark .nav-tile-idle {
+    background-color: color-mix(in srgb, var(--family, var(--primary)) 24%, transparent);
+    color: color-mix(in oklch, var(--family, var(--primary)) 70%, white);
   }
 }

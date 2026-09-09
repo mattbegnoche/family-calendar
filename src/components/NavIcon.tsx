@@ -26,9 +26,8 @@ export function NavIcon({ icon: Icon, isActive, activeGradient }: NavIconProps) 
     <span
       className={cn(
         ICON_TILE,
-        isActive
-          ? "text-white shadow-sm"
-          : "bg-sidebar-accent/60 text-sidebar-foreground/80",
+        // At rest: a wash of the family colour (see .nav-tile-idle in globals.css).
+        isActive ? "text-white shadow-sm" : "nav-tile-idle",
         // Fallback ramp for callers that pass no gradient.
         isActive && !activeGradient && "bg-linear-to-br from-[#4f46e5] to-[#7c3aed]",
       )}

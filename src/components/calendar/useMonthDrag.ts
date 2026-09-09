@@ -1,7 +1,7 @@
 "use client";
 
 import { addDays, differenceInCalendarDays, startOfDay } from "date-fns";
-import { useCallback, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { hasMovedPastThreshold } from "@/components/calendar/geometry";
 import { DAYS_PER_WEEK } from "@/lib/calendar/month-grid";
@@ -56,7 +56,14 @@ export function useMonthDrag({
   onCreateOnDay,
   onMove,
 }: UseMonthDragOptions): MonthDrag {
+  // Tracked in a ref and mirrored into state, for the reason useGridDrag
+  // gives: callbacks must fire from the handler, not from a state updater.
   const [state, setState] = useState<MonthDragState>(IDLE);
+  const gesture = useRef<MonthDragState>(IDLE);
+  const commit = useCallback((next: MonthDragState) => {
+    gesture.current = next;
+    setState(next);
+  }, []);
 
   const locate = useCallback(
     (clientX: number, clientY: number): number | null => {
@@ -85,32 +92,32 @@ export function useMonthDrag({
       const event = id ? (events.find((candidate) => candidate.id === id) ?? null) : null;
       if (event && !event.readOnly) pointer.currentTarget.setPointerCapture(pointer.pointerId);
 
-      setState({
+      commit({
         phase: "pending",
         origin: { event, dayIndex, clientX: pointer.clientX, clientY: pointer.clientY },
       });
     },
-    [events, locate],
+    [commit, events, locate],
   );
 
   const onPointerMove = useCallback(
     (pointer: ReactPointerEvent<HTMLElement>) => {
-      setState((current) => {
-        if (current.phase === "idle") return current;
-        const targetIndex = locate(pointer.clientX, pointer.clientY);
-        if (targetIndex === null) return current;
+      const current = gesture.current;
+      if (current.phase === "idle") return;
+      const targetIndex = locate(pointer.clientX, pointer.clientY);
+      if (targetIndex === null) return;
 
-        if (current.phase === "pending") {
-          const { event, clientX, clientY } = current.origin;
-          const canDrag = event !== null && !event.readOnly;
-          const moved = hasMovedPastThreshold(pointer.clientX - clientX, pointer.clientY - clientY);
-          if (!canDrag || !moved) return current;
-          return { phase: "active", origin: current.origin, targetIndex };
-        }
-        return { ...current, targetIndex };
-      });
+      if (current.phase === "pending") {
+        const { event, clientX, clientY } = current.origin;
+        const canDrag = event !== null && !event.readOnly;
+        const moved = hasMovedPastThreshold(pointer.clientX - clientX, pointer.clientY - clientY);
+        if (!canDrag || !moved) return;
+        commit({ phase: "active", origin: current.origin, targetIndex });
+        return;
+      }
+      commit({ ...current, targetIndex });
     },
-    [locate],
+    [commit, locate],
   );
 
   const finish = useCallback(
@@ -135,15 +142,14 @@ export function useMonthDrag({
       if (pointer.currentTarget.hasPointerCapture(pointer.pointerId)) {
         pointer.currentTarget.releasePointerCapture(pointer.pointerId);
       }
-      setState((current) => {
-        finish(current);
-        return IDLE;
-      });
+      const current = gesture.current;
+      commit(IDLE);
+      finish(current);
     },
-    [finish],
+    [commit, finish],
   );
 
-  const onPointerCancel = useCallback(() => setState(IDLE), []);
+  const onPointerCancel = useCallback(() => commit(IDLE), [commit]);
 
   return {
     draggingId: state.phase === "active" ? state.origin.event?.id : undefined,

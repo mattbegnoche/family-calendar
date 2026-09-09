@@ -9,6 +9,7 @@ const target: ImportTarget = {
   calendarName: "Family",
   member: { slug: "mom", color: "#0891b2" },
   timeZone: "America/Chicago",
+  editability: "not-owner",
 };
 
 const timed: GoogleEvent = {
@@ -37,6 +38,7 @@ describe("toCalendarEvent", () => {
       sourceLabel: "Family",
       htmlLink: timed.htmlLink,
       readOnly: true,
+      readOnlyNote: expect.stringMatching(/connected this calendar/),
     });
     expect(event?.start.toISOString()).toBe("2026-09-10T19:00:00.000Z");
     expect(event?.end.toISOString()).toBe("2026-09-10T20:00:00.000Z");
@@ -71,6 +73,18 @@ describe("toCalendarEvent", () => {
     // 8 March 2026 is the spring-forward day; midnight that day is still CST.
     expect(event?.start.toISOString()).toBe("2026-03-07T06:00:00.000Z");
     expect(event?.end.toISOString()).toBe("2026-03-08T06:00:00.000Z");
+  });
+
+  it("is editable, with no note, for the account's owner with write access", () => {
+    const event = toCalendarEvent(timed, { ...target, editability: "editable" });
+    expect(event?.readOnly).toBe(false);
+    expect(event?.readOnlyNote).toBeUndefined();
+  });
+
+  it("asks the owner to reconnect when only the read scope was granted", () => {
+    const event = toCalendarEvent(timed, { ...target, editability: "needs-reconnect" });
+    expect(event?.readOnly).toBe(true);
+    expect(event?.readOnlyNote).toMatch(/Reconnect/);
   });
 
   it("labels an untitled event", () => {

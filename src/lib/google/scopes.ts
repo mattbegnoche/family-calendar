@@ -7,13 +7,15 @@
  * `prompt=consent` and `access_type=offline` so Google issues the refresh token
  * the server needs once the hour-long access token has expired.
  *
- * Both scopes are read-only. Editing Google events from here is a later step,
- * and when it comes it will need `calendar.events` instead, which means every
- * connected account reconsents once. Asking for write access now, for a view
- * that never writes, would be over-asking.
+ * The events scope is read AND write: whoever connected a calendar can edit
+ * its events from here. Accounts that granted only the earlier read-only
+ * scope keep working for reading and are read-only until reconnected once.
  */
 
-/** Read events on any calendar the account can see. Nothing here can write. */
+/** Read and write events on any calendar the account can see. */
+export const GOOGLE_CALENDAR_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+
+/** What the app asked for before editing existed; still enough to read. */
 export const GOOGLE_CALENDAR_EVENTS_READONLY_SCOPE =
   "https://www.googleapis.com/auth/calendar.events.readonly";
 
@@ -24,8 +26,9 @@ export const GOOGLE_CALENDAR_EVENTS_READONLY_SCOPE =
 export const GOOGLE_CALENDAR_LIST_READONLY_SCOPE =
   "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 
+/** What a connect asks for today. */
 export const GOOGLE_CALENDAR_SCOPES: readonly string[] = [
-  GOOGLE_CALENDAR_EVENTS_READONLY_SCOPE,
+  GOOGLE_CALENDAR_EVENTS_SCOPE,
   GOOGLE_CALENDAR_LIST_READONLY_SCOPE,
 ];
 
@@ -41,13 +44,24 @@ export function googleCalendarAuthorizationScope(): string {
   return [...GOOGLE_SIGN_IN_SCOPES, ...GOOGLE_CALENDAR_SCOPES].join(" ");
 }
 
+function grantedScopes(granted: string | null | undefined): ReadonlySet<string> {
+  return new Set((granted ?? "").split(/\s+/).filter(Boolean));
+}
+
 /**
- * Whether a stored Account.scope — Google's space-separated grant list — covers
- * everything the calendar import needs. A plain sign-in account fails this and
- * stays out of the connect picker until its owner grants access.
+ * Whether a stored Account.scope — Google's space-separated grant list — is
+ * enough to READ calendars: the calendar list plus either events scope. A
+ * plain sign-in account fails this and stays out of the connect picker.
  */
 export function hasGoogleCalendarScope(granted: string | null | undefined): boolean {
-  if (!granted) return false;
-  const scopes = new Set(granted.split(/\s+/).filter(Boolean));
-  return GOOGLE_CALENDAR_SCOPES.every((scope) => scopes.has(scope));
+  const scopes = grantedScopes(granted);
+  return (
+    scopes.has(GOOGLE_CALENDAR_LIST_READONLY_SCOPE) &&
+    (scopes.has(GOOGLE_CALENDAR_EVENTS_SCOPE) || scopes.has(GOOGLE_CALENDAR_EVENTS_READONLY_SCOPE))
+  );
+}
+
+/** Whether the account may also change events: only the read-write scope will do. */
+export function hasGoogleCalendarWriteScope(granted: string | null | undefined): boolean {
+  return grantedScopes(granted).has(GOOGLE_CALENDAR_EVENTS_SCOPE);
 }

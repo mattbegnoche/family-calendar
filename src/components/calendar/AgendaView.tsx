@@ -1,9 +1,10 @@
 "use client";
 
 import { format, isSameDay } from "date-fns";
-import { Lock, MapPin } from "lucide-react";
+import { Check, Lock, MapPin } from "lucide-react";
 
 import { eventStyle } from "@/components/calendar/EventCard";
+import { TaskIcon } from "@/components/tasks/TaskIcon";
 import { formatTimeRange } from "@/lib/calendar/format";
 import type { AgendaDay } from "@/lib/calendar/agenda";
 import type { CalendarEvent } from "@/lib/calendar/types";
@@ -33,8 +34,13 @@ function AgendaRow({ event, onOpen }: { event: CalendarEvent; onOpen: () => void
         />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5 text-sm font-medium">
-            <span className="truncate">{event.title}</span>
-            {event.readOnly ? <Lock className="size-3 shrink-0 opacity-60" aria-label="Read-only" /> : null}
+            {event.icon ? <TaskIcon iconKey={event.icon} className="size-3.5 shrink-0 text-muted-foreground" /> : null}
+            <span className={cn("truncate", event.task?.isDone && "line-through opacity-60")}>{event.title}</span>
+            {event.task?.isDone ? (
+              <Check className="size-3 shrink-0" aria-label="Done" />
+            ) : event.readOnly && !event.task ? (
+              <Lock className="size-3 shrink-0 opacity-60" aria-label="Read-only" />
+            ) : null}
           </span>
           {event.location ? (
             <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">

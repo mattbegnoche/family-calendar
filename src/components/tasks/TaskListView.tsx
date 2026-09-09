@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, Clock, Trash2 } from "lucide-react";
+import { Check, Clock, Repeat, Trash2 } from "lucide-react";
 
+import { TaskIcon } from "@/components/tasks/TaskIcon";
 import { compareTasks, type TaskItem } from "@/lib/task-item";
 import {
   TASK_PRIORITIES,
@@ -21,6 +22,7 @@ export interface TaskListViewProps {
   onMove: (task: TaskItem, status: TaskStatus) => void;
   onPriorityChange: (task: TaskItem, priority: TaskPriority) => void;
   onToggleComplete: (task: TaskItem) => void;
+  onEdit: (task: TaskItem) => void;
   onDelete: (task: TaskItem) => void;
 }
 
@@ -40,6 +42,7 @@ export function TaskListView({
   onMove,
   onPriorityChange,
   onToggleComplete,
+  onEdit,
   onDelete,
 }: TaskListViewProps) {
   if (tasks.length === 0) {
@@ -85,20 +88,18 @@ export function TaskListView({
               {isComplete ? <Check className="size-3" strokeWidth={3} /> : null}
             </button>
 
-            {task.icon ? (
-              <span aria-hidden className="text-base leading-none">
-                {task.icon}
-              </span>
-            ) : null}
+            <TaskIcon iconKey={task.icon} className="size-4 shrink-0 text-muted-foreground" />
 
-            <span
+            <button
+              type="button"
+              onClick={() => onEdit(task)}
               className={cn(
-                "min-w-40 flex-1 text-sm",
+                "min-w-40 flex-1 text-left text-sm hover:underline",
                 isComplete && "line-through opacity-60",
               )}
             >
               {task.title}
-            </span>
+            </button>
 
             <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
               <span
@@ -113,6 +114,13 @@ export function TaskListView({
               <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                 <Clock className="size-3" />
                 {task.dueLabel}
+              </span>
+            ) : null}
+
+            {task.repeatLabel ? (
+              <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                <Repeat className="size-3" />
+                {task.repeatLabel}
               </span>
             ) : null}
 

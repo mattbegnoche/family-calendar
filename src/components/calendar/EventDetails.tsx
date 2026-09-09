@@ -1,16 +1,23 @@
 "use client";
 
-import { CalendarDays, ExternalLink, MapPin } from "lucide-react";
+import { Check, CalendarDays, ExternalLink, MapPin, Pencil, RotateCcw } from "lucide-react";
+import { useState, useTransition } from "react";
 
-import { Dialog } from "@/components/calendar/Dialog";
+import { toggleTaskOccurrence } from "@/app/actions/tasks";
+import { Dialog } from "@/components/Dialog";
+import { TaskForm, type TaskFormMember } from "@/components/tasks/TaskForm";
+import { TaskIcon } from "@/components/tasks/TaskIcon";
 import { eventStyle } from "@/components/calendar/EventCard";
 import { Button } from "@/components/ui/button";
 import { readOnlyReason } from "@/lib/calendar-ids";
 import { formatEventWhen } from "@/lib/calendar/format";
 import type { CalendarEvent } from "@/lib/calendar/types";
+import { cn } from "@/lib/utils";
 
 export interface EventDetailsProps {
   readonly event: CalendarEvent | null;
+  /** Household members, for the task editor's Who field. */
+  readonly members: readonly TaskFormMember[];
   readonly onClose: () => void;
 }
 
@@ -25,20 +32,60 @@ const SOURCE_NAMES: Record<CalendarEvent["source"], string> = {
  * plus why it cannot be edited here and, for Google events, a link to where
  * it can.
  */
-export function EventDetails({ event, onClose }: EventDetailsProps) {
-  const reason = event ? readOnlyReason(event.id) : null;
+export function EventDetails({ event, members, onClose }: EventDetailsProps) {
+  const reason = event ? (event.readOnlyNote ?? readOnlyReason(event.id)) : null;
+  const [isToggling, startToggle] = useTransition();
+  // Remounted per event by the parent (key={event.id}), so this resets each time.
+  const [isEditing, setIsEditing] = useState(false);
+
+  // The page re-renders with the fresh state after the action, so closing is
+  // all that is left to do here.
+  const toggleDone = () => {
+    const task = event?.task;
+    if (!task) return;
+    startToggle(async () => {
+      await toggleTaskOccurrence(
+        task.id,
+        task.occurrenceStart ? task.occurrenceStart.getTime() : null,
+        !task.isDone,
+      );
+      onClose();
+    });
+  };
+
+  if (event?.task && isEditing) {
+    return (
+      <Dialog isOpen onClose={onClose} label="Edit task">
+        <h2 className="text-lg font-semibold">Edit task</h2>
+        {/* Saving revalidates the calendar; closing is all that is left. */}
+        <TaskForm
+          members={members}
+          task={event.task.editable}
+          seed={null}
+          onSaved={onClose}
+          onCancel={() => setIsEditing(false)}
+        />
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog isOpen={event !== null} onClose={onClose} label="Event details">
       {event ? (
         <>
           <div className="flex items-start gap-3">
-            <span
-              aria-hidden
-              className="event-solid mt-1.5 size-3 shrink-0 rounded-full"
-              style={eventStyle(event)}
-            />
-            <h2 className="text-lg font-semibold leading-snug">{event.title}</h2>
+            {event.icon ? (
+              <TaskIcon iconKey={event.icon} className="mt-1 size-5 shrink-0" />
+            ) : (
+              <span
+                aria-hidden
+                className="event-solid mt-1.5 size-3 shrink-0 rounded-full"
+                style={eventStyle(event)}
+              />
+            )}
+            <h2 className={cn("text-lg font-semibold leading-snug", event.task?.isDone && "line-through opacity-70")}>
+              {event.title}
+            </h2>
           </div>
 
           <dl className="flex flex-col gap-2 text-sm">
@@ -65,6 +112,18 @@ export function EventDetails({ event, onClose }: EventDetailsProps) {
           </p>
 
           <div className="flex justify-end gap-2 border-t pt-4">
+            {event.task ? (
+              <>
+                <Button type="button" variant="outline" onClick={() => setIsEditing(true)}>
+                  <Pencil />
+                  Edit task
+                </Button>
+                <Button type="button" variant="outline" onClick={toggleDone} disabled={isToggling}>
+                  {event.task.isDone ? <RotateCcw /> : <Check />}
+                  {event.task.isDone ? "Reopen" : "Mark done"}
+                </Button>
+              </>
+            ) : null}
             {event.htmlLink ? (
               <Button
                 variant="outline"

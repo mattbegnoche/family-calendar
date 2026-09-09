@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "postinstall": "prisma generate",
-    "db:seed": "node src/prisma/seed.mjs"
+    "db:seed": "node src/prisma/seed.mjs",
+    "db:migrate": "prisma migrate deploy",
+    "db:status": "prisma migrate status"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

@@ -1,3 +1,5 @@
+import type { TaskFormValues } from "@/lib/task-item";
+
 /**
  * The calendar's own event model. Nothing here knows about Prisma, Google, or
  * the grid components: the adapters in src/lib/adapters/calendar.ts map rows
@@ -52,11 +54,29 @@ export interface CalendarEvent {
   readonly htmlLink?: string;
   /** Read-only events open a details card, not the editor, and refuse drag and resize. */
   readonly readOnly: boolean;
+  /** Why this particular event is read-only, when the generic reason for its kind is not the whole story. */
+  readonly readOnlyNote?: string;
+  /** A key into TASK_ICONS, drawn before the title. Tasks carry one; events do not. */
+  readonly icon?: string;
+  /** The task behind a task occurrence, so the details card can check it off. */
+  readonly task?: TaskReference;
+}
+
+export interface TaskReference {
+  readonly id: string;
+  /** The occurrence this card is, for a repeating task; null for a one-off. */
+  readonly occurrenceStart: Date | null;
+  readonly isDone: boolean;
+  /** Everything the task editor needs, so the details card can edit in place. */
+  readonly editable: TaskFormValues;
 }
 
 /** A member, as a toggleable calendar and as a column in the People view. */
 export interface CalendarSource {
+  /** The member's slug: what events carry as calendarId. */
   readonly id: string;
+  /** The member's row id, for forms that write tasks. */
+  readonly memberId: string;
   readonly label: string;
   readonly color: string;
 }
@@ -68,8 +88,11 @@ export interface EventDraft {
   readonly end: Date;
   readonly allDay: boolean;
   readonly calendarId: string;
+  /** Blank means "clear it"; absent means "leave it". */
   readonly description?: string;
   readonly location?: string;
+  /** Create it in this connected Google calendar instead of the family's own. */
+  readonly googleConnectionId?: string;
 }
 
 export interface DateRange {

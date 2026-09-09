@@ -1,5 +1,6 @@
 import { googleEventId } from "@/lib/calendar-ids";
 import type { CalendarEvent } from "@/lib/calendar/types";
+import { EDITABILITY_NOTE, type GoogleEditability } from "@/lib/google/editability";
 import type { GoogleEvent } from "@/lib/google/types";
 import { zonedMidnight } from "@/lib/time-zones";
 
@@ -21,6 +22,8 @@ export interface ImportTarget {
   readonly member: { readonly slug: string; readonly color: string };
   /** Household.timeZone: where Google's zone-less all-day dates are anchored. */
   readonly timeZone: string;
+  /** Whether the person viewing may change these events; see googleEditability. */
+  readonly editability: GoogleEditability;
 }
 
 function isDeclinedBySelf(event: GoogleEvent): boolean {
@@ -98,9 +101,10 @@ export function toCalendarEvent(event: GoogleEvent, target: ImportTarget): Calen
     source: "google",
     sourceLabel: target.calendarName,
     htmlLink: event.htmlLink,
-    // View-only for now. Editing Google events needs the write scope and a
-    // write-back path; until then the grid refuses to move or edit these.
-    readOnly: true,
+    // Editable by whoever connected the calendar, once their account has the
+    // write scope; read-only, with the reason, for everyone else.
+    readOnly: target.editability !== "editable",
+    ...(target.editability !== "editable" && { readOnlyNote: EDITABILITY_NOTE[target.editability] }),
   };
 }
 

@@ -12,6 +12,22 @@ export interface ActionState {
 
 export const IDLE_STATE: ActionState = { error: null };
 
+/**
+ * For forms that stay open after a save and need to know it happened: the
+ * moment of the last successful save. Changes on every success, so a form
+ * can react each time; null until then.
+ *
+ * Here and not beside the action on purpose. A "use server" module may export
+ * only async functions — a constant exported from one is silently replaced on
+ * the client by a server-action reference, and a form comparing that against
+ * null would believe it had already saved.
+ */
+export interface SaveActionState extends ActionState {
+  readonly savedAt: number | null;
+}
+
+export const IDLE_SAVE_STATE: SaveActionState = { error: null, savedAt: null };
+
 const GENERIC_FAILURE = "Something went wrong. Please try again.";
 
 /**

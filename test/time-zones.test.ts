@@ -42,3 +42,21 @@ describe("zonedMidnight", () => {
     expect(() => zonedMidnight("2026-07-04T00:00", "UTC")).toThrow(RangeError);
   });
 });
+
+describe("wallClockIn and zonedDateTime", () => {
+  it("round-trip a wall-clock time through its instant", async () => {
+    const { wallClockIn, zonedDateTime } = await import("@/lib/time-zones");
+    const clock = { year: 2026, month: 9, day: 10, hour: 7, minute: 30 };
+    const instant = zonedDateTime(clock, "America/Chicago");
+    expect(instant.toISOString()).toBe("2026-09-10T12:30:00.000Z");
+    expect(wallClockIn(instant, "America/Chicago")).toEqual(clock);
+  });
+
+  it("resolves a time that the spring-forward gap swallows to just after the gap", async () => {
+    const { zonedDateTime } = await import("@/lib/time-zones");
+    // 2:30 am on 8 March 2026 never happens in Chicago; the first valid instant after it is 3:30 am CDT.
+    expect(
+      zonedDateTime({ year: 2026, month: 3, day: 8, hour: 2, minute: 30 }, "America/Chicago").toISOString(),
+    ).toBe("2026-03-08T08:30:00.000Z");
+  });
+});

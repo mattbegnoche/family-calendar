@@ -2,6 +2,8 @@ import "server-only";
 
 import { UserFacingError } from "@/lib/errors";
 import { Prisma } from "@/lib/generated/prisma/client";
+import { googleEditability } from "@/lib/google/editability";
+import type { WritableCalendarOption } from "@/lib/google/types";
 import { prisma } from "@/lib/prisma";
 
 /** CalendarConnection rows: which Google calendars a household shows, and how. */
@@ -33,7 +35,7 @@ const CONNECTION_SELECT = {
   accountEmail: true,
   createdAt: true,
   member: { select: { id: true, slug: true, name: true, color: true } },
-  account: { select: { id: true, userId: true } },
+  account: { select: { id: true, userId: true, scope: true } },
 } as const;
 
 export type CalendarConnectionRecord = Awaited<
@@ -46,6 +48,22 @@ export async function listCalendarConnections(householdId: string) {
     orderBy: [{ accountEmail: "asc" }, { summary: "asc" }],
     select: CONNECTION_SELECT,
   });
+}
+
+/** The household's connected calendars this user may write to: their own accounts, with the write scope. */
+export async function listWritableConnections(
+  householdId: string,
+  userId: string,
+): Promise<WritableCalendarOption[]> {
+  const connections = await listCalendarConnections(householdId);
+  return connections
+    .filter((connection) => googleEditability(connection.account, userId) === "editable")
+    .map((connection) => ({
+      connectionId: connection.id,
+      name: connection.summary,
+      accountEmail: connection.accountEmail,
+      memberSlug: connection.member.slug,
+    }));
 }
 
 export interface NewCalendarConnection {

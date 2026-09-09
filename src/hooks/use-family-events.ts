@@ -59,12 +59,21 @@ export function useFamilyEvents(
     [sources],
   );
 
-  /** Returns false — and shows why — when the event may not be changed here. */
-  const assertEditable = useCallback((eventId: string): boolean => {
-    const reason = readOnlyReason(eventId);
-    if (reason) setError(reason);
-    return reason === null;
-  }, []);
+  /**
+   * Returns false — and shows why — when the event may not be changed here.
+   * The flag on the event decides (a Google event is editable for whoever
+   * connected its calendar); the id-based reason is the fallback wording.
+   */
+  const assertEditable = useCallback(
+    (eventId: string): boolean => {
+      const target = events.find((event) => event.id === eventId);
+      if (!target) return true;
+      if (!target.readOnly) return true;
+      setError(target.readOnlyNote ?? readOnlyReason(eventId) ?? "This event can't be edited here.");
+      return false;
+    },
+    [events],
+  );
 
   const createEvent = useCallback(
     async (draft: EventDraft) => {
@@ -89,9 +98,10 @@ export function useFamilyEvents(
           allDay: draft.allDay,
           description: draft.description,
           location: draft.location,
+          googleConnectionId: draft.googleConnectionId,
         });
-        // Swap the placeholder for the row the database created, so the id
-        // and colour are authoritative from here on.
+        // Swap the placeholder for the row the database (or Google) created,
+        // so the id and colour are authoritative from here on.
         setEvents((previous) =>
           previous.map((event) => (event.id === pendingId ? saved : event)),
         );
@@ -161,6 +171,12 @@ export function useFamilyEvents(
   const moveEvent = useCallback(
     async (moved: CalendarEvent, start: Date, end: Date, calendarId?: string) => {
       if (!assertEditable(moved.id)) return;
+      // A Google event's column is its calendar's; a drop on another member's
+      // column would only snap back once the server ignored it.
+      if (moved.source === "google" && calendarId && calendarId !== moved.calendarId) {
+        setError("A Google Calendar event stays in the column of the calendar it belongs to.");
+        return;
+      }
 
       let rollback: CalendarEvent[] = [];
       setEvents((previous) => {
@@ -179,7 +195,7 @@ export function useFamilyEvents(
       setError(null);
 
       try {
-        await moveEventAction(moved.id, start, end, calendarId);
+        await moveEventAction(moved.id, start, end, calendarId, moved.allDay);
       } catch (caught: unknown) {
         setEvents(rollback);
         setError(messageFor(caught));

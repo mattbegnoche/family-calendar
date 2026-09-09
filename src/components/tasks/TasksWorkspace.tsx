@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useOptimistic, useState, useTransition } from "react";
-import { List, SquareKanban, type LucideIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo, useOptimistic, useState, useTransition } from "react";
+import { List, Plus, SquareKanban, type LucideIcon } from "lucide-react";
 
 import {
   changeTaskPriority,
@@ -9,8 +10,8 @@ import {
   removeTask,
   toggleTask,
 } from "@/app/actions/tasks";
-import { AddTaskForm } from "@/components/tasks/AddTaskForm";
 import { KanbanBoard } from "@/components/tasks/KanbanBoard";
+import { TaskDialog } from "@/components/tasks/TaskDialog";
 import { TaskListView } from "@/components/tasks/TaskListView";
 import {
   ANY,
@@ -19,6 +20,7 @@ import {
   type FilterMember,
   type TaskFilterState,
 } from "@/components/tasks/TaskFilters";
+import { Button } from "@/components/ui/button";
 import {
   TASK_VIEW_MODES,
   TASK_VIEW_MODE_LABEL,
@@ -47,6 +49,14 @@ function defaultScheduleTime(): Date {
   when.setHours(DEFAULT_SCHEDULE_HOUR, 0, 0, 0);
   return when;
 }
+
+/** The task editor: closed, creating, or editing one task. */
+type TaskEditor =
+  | { readonly kind: "closed" }
+  | { readonly kind: "create" }
+  | { readonly kind: "edit"; readonly task: TaskItem };
+
+const EDITOR_CLOSED: TaskEditor = { kind: "closed" };
 
 type TaskPatch =
   | { readonly kind: "update"; readonly id: string; readonly changes: Partial<TaskItem> }
@@ -84,14 +94,30 @@ function matches(
 export interface TasksWorkspaceProps {
   tasks: readonly TaskItem[];
   members: readonly FilterMember[];
+  /** A task to open the editor on straight away, from `/tasks?edit=<id>`. */
+  initialEditTaskId?: string | null;
 }
 
-export function TasksWorkspace({ tasks, members }: TasksWorkspaceProps) {
+const TASKS_PATH = "/tasks";
+
+export function TasksWorkspace({ tasks, members, initialEditTaskId = null }: TasksWorkspaceProps) {
   // Local state, like MyCalendar's own view/date — the tasks page is meant to
   // feel like the calendar page, and that one does not put view in the URL.
   const [mode, setMode] = useState<TaskViewMode>("board");
   const [filters, setFilters] = useState<TaskFilterState>(EMPTY_FILTERS);
+  const [editor, setEditor] = useState<TaskEditor>(() => {
+    const linked = initialEditTaskId
+      ? tasks.find((task) => task.id === initialEditTaskId)
+      : undefined;
+    return linked ? { kind: "edit", task: linked } : EDITOR_CLOSED;
+  });
   const [, startTransition] = useTransition();
+  const router = useRouter();
+  const closeEditor = useCallback(() => {
+    setEditor(EDITOR_CLOSED);
+    // Arrived via the calendar's link: leave the URL clean once the editor closes.
+    if (initialEditTaskId) router.replace(TASKS_PATH);
+  }, [initialEditTaskId, router]);
 
   // Every mutation is a server action followed by revalidatePath, which is a
   // full round trip. useOptimistic makes the card move the instant it is
@@ -142,6 +168,8 @@ export function TasksWorkspace({ tasks, members }: TasksWorkspaceProps) {
     });
   };
 
+  const handleEdit = (task: TaskItem) => setEditor({ kind: "edit", task });
+
   const handleDelete = (task: TaskItem) => {
     startTransition(async () => {
       applyOptimistic({ kind: "remove", id: task.id });
@@ -177,6 +205,12 @@ export function TasksWorkspace({ tasks, members }: TasksWorkspaceProps) {
             );
           })}
         </div>
+
+        {/* Top right, where the calendar keeps "New event". */}
+        <Button type="button" size="sm" onClick={() => setEditor({ kind: "create" })}>
+          <Plus />
+          Add task
+        </Button>
       </header>
 
       <TaskFilters
@@ -194,6 +228,7 @@ export function TasksWorkspace({ tasks, members }: TasksWorkspaceProps) {
             tasks={visibleTasks}
             onMove={handleMove}
             onToggleComplete={handleToggleComplete}
+            onEdit={handleEdit}
             onDelete={handleDelete}
           />
         ) : (
@@ -202,12 +237,21 @@ export function TasksWorkspace({ tasks, members }: TasksWorkspaceProps) {
             onMove={handleMove}
             onPriorityChange={handlePriorityChange}
             onToggleComplete={handleToggleComplete}
+            onEdit={handleEdit}
             onDelete={handleDelete}
           />
         )}
       </div>
 
-      <AddTaskForm members={members} />
+      {/* Mounted per open, so the form starts from the task being edited. */}
+      {editor.kind !== "closed" ? (
+        <TaskDialog
+          members={members}
+          task={editor.kind === "edit" ? editor.task : null}
+          seed={null}
+          onClose={closeEditor}
+        />
+      ) : null}
     </div>
   );
 }

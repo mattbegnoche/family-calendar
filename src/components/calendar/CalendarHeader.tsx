@@ -63,11 +63,6 @@ export function CalendarHeader({
 
       <h2 className="min-w-0 flex-1 truncate text-base font-semibold sm:text-lg">{title}</h2>
 
-      <Button type="button" size="sm" onClick={onNewEvent}>
-        <Plus />
-        <span className="hidden sm:inline">New event</span>
-      </Button>
-
       {/* Segmented buttons where there is room; a native select on phones. */}
       <div role="group" aria-label="Calendar view" className="hidden rounded-md border p-0.5 md:flex">
         {CALENDAR_VIEWS.map((candidate) => (
@@ -101,6 +96,11 @@ export function CalendarHeader({
           </option>
         ))}
       </select>
+
+      <Button type="button" size="sm" onClick={onNewEvent}>
+        <Plus />
+        <span className="hidden sm:inline">New event</span>
+      </Button>
     </div>
   );
 }

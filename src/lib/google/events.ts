@@ -1,6 +1,8 @@
 import "server-only";
 
-import { googleCalendarGet } from "@/lib/google/api";
+import { googleCalendarGet, googleCalendarRequest } from "@/lib/google/api";
+import { GoogleApiError } from "@/lib/google/errors";
+import type { GoogleEventPatch } from "@/lib/google/event-patch";
 import type { GoogleEvent } from "@/lib/google/types";
 
 interface EventsListResponse {
@@ -58,4 +60,74 @@ export async function listGoogleEvents({
   } while (pageToken && page < MAX_PAGES);
 
   return collected;
+}
+
+/**
+ * Nobody outside the family is emailed about a change made here: this is a
+ * household display, not a scheduling tool for the event's guests.
+ */
+const NO_NOTIFICATIONS = { sendUpdates: "none" };
+
+/** Create one event. Google answers with the event as stored, id included. */
+export async function insertGoogleEvent(
+  accessToken: string,
+  calendarId: string,
+  body: GoogleEventPatch,
+): Promise<GoogleEvent> {
+  const response = await googleCalendarRequest(
+    accessToken,
+    "POST",
+    `/calendars/${encodeURIComponent(calendarId)}/events`,
+    NO_NOTIFICATIONS,
+    body,
+    "events.insert",
+  );
+  return (await response.json()) as GoogleEvent;
+}
+
+function eventPath(calendarId: string, eventId: string): string {
+  return `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`;
+}
+
+/**
+ * Change part of one event. On an instance id of a repeating event this
+ * changes that occurrence alone, which Google records as an exception.
+ */
+export async function patchGoogleEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+  patch: GoogleEventPatch,
+): Promise<void> {
+  await googleCalendarRequest(
+    accessToken,
+    "PATCH",
+    eventPath(calendarId, eventId),
+    NO_NOTIFICATIONS,
+    patch,
+    "events.patch",
+  );
+}
+
+const HTTP_GONE = 410;
+
+/** Delete one event. Already gone counts as done. */
+export async function deleteGoogleEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+): Promise<void> {
+  try {
+    await googleCalendarRequest(
+      accessToken,
+      "DELETE",
+      eventPath(calendarId, eventId),
+      NO_NOTIFICATIONS,
+      undefined,
+      "events.delete",
+    );
+  } catch (error) {
+    if (error instanceof GoogleApiError && error.status === HTTP_GONE) return;
+    throw error;
+  }
 }

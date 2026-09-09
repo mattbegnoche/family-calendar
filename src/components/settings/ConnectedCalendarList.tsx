@@ -1,11 +1,15 @@
 "use client";
 
 import { useActionState } from "react";
-import { Unlink } from "lucide-react";
+import { Link2, Unlink } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/onboarding/FormError";
-import { removeCalendarConnectionAction } from "@/app/actions/google-calendar";
+import {
+  connectGoogleAccountAction,
+  removeCalendarConnectionAction,
+} from "@/app/actions/google-calendar";
+import type { GoogleEditability } from "@/lib/google/editability";
 import { IDLE_STATE } from "@/lib/action-state";
 
 export interface ConnectedCalendarView {
@@ -16,7 +20,15 @@ export interface ConnectedCalendarView {
   readonly memberColor: string;
   /** Owners may remove any calendar; others only ones read through their own account. */
   readonly canRemove: boolean;
+  /** Whether the signed-in user may edit this calendar's events, and if not, why. */
+  readonly access: GoogleEditability;
 }
+
+const ACCESS_LABEL: Record<GoogleEditability, string> = {
+  editable: "you can edit its events",
+  "not-owner": "read-only for you",
+  "needs-reconnect": "read-only until you reconnect",
+};
 
 function ConnectedCalendarRow({ calendar }: { calendar: ConnectedCalendarView }) {
   const [state, remove, isRemoving] = useActionState(removeCalendarConnectionAction, IDLE_STATE);
@@ -32,9 +44,19 @@ function ConnectedCalendarRow({ calendar }: { calendar: ConnectedCalendarView })
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{calendar.summary}</p>
           <p className="truncate text-xs text-muted-foreground">
-            {calendar.accountEmail} · shown under {calendar.memberName}
+            {calendar.accountEmail} · shown under {calendar.memberName} ·{" "}
+            {ACCESS_LABEL[calendar.access]}
           </p>
         </div>
+        {calendar.access === "needs-reconnect" ? (
+          // The same consent flow as connecting; this time it asks for write access.
+          <form action={connectGoogleAccountAction}>
+            <Button type="submit" variant="outline" size="sm">
+              <Link2 className="size-4" />
+              Reconnect
+            </Button>
+          </form>
+        ) : null}
         {calendar.canRemove ? (
           <form action={remove}>
             <input type="hidden" name="connectionId" value={calendar.id} />

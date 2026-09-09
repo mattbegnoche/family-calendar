@@ -14,6 +14,7 @@ import { FamilyCodeCard } from "@/components/settings/FamilyCodeCard";
 import { JoinRequestList } from "@/components/settings/JoinRequestList";
 import { fetchHouseholdCodeCiphertext, requireHousehold } from "@/lib/household";
 import { listCalendarConnections } from "@/lib/google/connections";
+import { googleEditability } from "@/lib/google/editability";
 import { listLinkedGoogleAccounts } from "@/lib/google/linked-accounts";
 import { HouseholdGlyph, householdTileGradient } from "@/lib/household-icons";
 import { readFamilyCode } from "@/lib/household-setup";
@@ -50,6 +51,7 @@ export default async function SettingsPage() {
     memberName: connection.member.name,
     memberColor: connection.member.color,
     canRemove: isOwner || connection.account.userId === userId,
+    access: googleEditability(connection.account, userId),
   }));
   const memberOptions = household.members.map((member) => ({
     id: member.id,
@@ -184,7 +186,8 @@ export default async function SettingsPage() {
             </CardTitle>
             <CardDescription>
               Events from connected Google calendars appear on the family calendar.
-              Read-only for now: change them in Google Calendar and they update here.
+              Whoever connected a calendar can edit its events here; everyone else
+              sees them.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">

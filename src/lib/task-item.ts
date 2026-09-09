@@ -1,5 +1,6 @@
 import { TASK_PRIORITY_RANK, type TaskPriority } from "@/lib/task-priority";
 import type { TaskStatus } from "@/lib/task-status";
+import type { RepeatFrequency } from "@/lib/task-recurrence";
 
 /**
  * One task as the tasks page renders it.
@@ -28,6 +29,65 @@ export interface TaskItem {
   readonly memberName: string;
   readonly memberColor: string;
   readonly completedByName: string | null;
+  /** "Every day", "Weekly on Mon, Wed"…; null for a one-off. */
+  readonly repeatLabel?: string | null;
+  /**
+   * For a repeating task, the occurrence `status` and `dueLabel` describe:
+   * today's, or the next one. Null for a one-off, whose dueAtMs is the date.
+   */
+  readonly occurrenceStartMs?: number | null;
+  /** What the edit form needs to start from. */
+  readonly details?: TaskDetails;
+}
+
+/** The raw scheduling fields of a task, as the edit form wants them. ISO strings cross the server boundary. */
+export interface TaskDetails {
+  readonly dueAtIso: string | null;
+  readonly dueAllDay: boolean;
+  readonly durationMinutes: number;
+  readonly repeatFrequency: RepeatFrequency | null;
+  readonly repeatInterval: number;
+  readonly repeatWeekdays: readonly number[];
+  readonly repeatUntilIso: string | null;
+}
+
+/** The columns TaskDetails is built from: what a Task row holds about scheduling. */
+export interface TaskDetailsSource {
+  readonly dueAt: Date | null;
+  readonly dueAllDay: boolean;
+  readonly durationMinutes: number;
+  readonly repeatFrequency: RepeatFrequency | null;
+  readonly repeatInterval: number;
+  readonly repeatWeekdays: readonly number[];
+  readonly repeatUntil: Date | null;
+}
+
+export function taskDetailsOf(task: TaskDetailsSource): TaskDetails {
+  return {
+    dueAtIso: task.dueAt?.toISOString() ?? null,
+    dueAllDay: task.dueAllDay,
+    durationMinutes: task.durationMinutes,
+    repeatFrequency: task.repeatFrequency,
+    repeatInterval: task.repeatInterval,
+    repeatWeekdays: [...task.repeatWeekdays],
+    repeatUntilIso: task.repeatUntil?.toISOString() ?? null,
+  };
+}
+
+/**
+ * What the task editor starts from. A TaskItem satisfies it; so does the
+ * slimmer payload a calendar card carries, which is how the calendar can open
+ * the editor without a trip to the tasks page.
+ */
+export interface TaskFormValues {
+  readonly id: string;
+  readonly title: string;
+  readonly icon: string | null;
+  readonly notes: string | null;
+  readonly priority: TaskPriority;
+  readonly memberId: string;
+  /** Optional so a TaskItem, whose details are optional, satisfies this as is. */
+  readonly details?: TaskDetails;
 }
 
 /** The two ways of looking at the same tasks. */

@@ -2,6 +2,10 @@ import { localEventId, taskEventId } from "@/lib/calendar-ids";
 import type { CalendarEvent, CalendarSource } from "@/lib/calendar/types";
 import type { EventRecord } from "@/lib/events";
 import type { Member } from "@/lib/household";
+import { DEFAULT_TASK_ICON, isTaskIconKey } from "@/lib/task-icons";
+import { taskDetailsOf } from "@/lib/task-item";
+import { toTaskPriority } from "@/lib/task-priority";
+import type { TaskOccurrence } from "@/lib/task-occurrences";
 import type { TaskRecord } from "@/lib/tasks";
 
 /**
@@ -10,8 +14,6 @@ import type { TaskRecord } from "@/lib/tasks";
  * on how the grid draws things.
  */
 
-/** Default length for a task that has a time but no duration of its own. */
-const TASK_BLOCK_MINUTES = 30;
 const MS_PER_MINUTE = 60 * 1000;
 
 export function toCalendarEvent(event: EventRecord): CalendarEvent {
@@ -31,27 +33,45 @@ export function toCalendarEvent(event: EventRecord): CalendarEvent {
 }
 
 /**
- * A task only reaches the grid when it has a `dueAt`; the caller is responsible
- * for filtering. Tasks carry no end time, so they render as a fixed block, and
- * they are edited from the tasks page rather than dragged around here.
+ * One occurrence of a task on the grid, drawn as long as the task's duration
+ * says. Tasks are edited from the tasks page rather than dragged around here. A repeating task's occurrences share the task id with
+ * the occurrence start appended, so each is its own card.
  */
-export function taskToCalendarEvent(task: TaskRecord): CalendarEvent | null {
-  if (!task.dueAt) return null;
-  const start = task.dueAt;
-  const end = new Date(start.getTime() + TASK_BLOCK_MINUTES * MS_PER_MINUTE);
+export function taskOccurrenceToCalendarEvent(
+  occurrence: TaskOccurrence<TaskRecord>,
+): CalendarEvent {
+  const { task, start } = occurrence;
+  const suffix = occurrence.isRepeating ? `@${start.getTime()}` : "";
+  const allDay = task.dueAllDay;
+  const end = allDay ? start : new Date(start.getTime() + task.durationMinutes * MS_PER_MINUTE);
 
   return {
-    id: taskEventId(task.id),
-    title: task.icon ? `${task.icon} ${task.title}` : task.title,
+    id: taskEventId(`${task.id}${suffix}`),
+    title: task.title,
     description: task.notes ?? undefined,
     start,
     end,
-    allDay: false,
+    allDay,
     calendarId: task.member.slug,
     color: task.member.color,
     source: "task",
     sourceLabel: "Tasks",
     readOnly: true,
+    icon: isTaskIconKey(task.icon) ? task.icon : DEFAULT_TASK_ICON,
+    task: {
+      id: task.id,
+      occurrenceStart: occurrence.isRepeating ? start : null,
+      isDone: occurrence.isDone,
+      editable: {
+        id: task.id,
+        title: task.title,
+        icon: task.icon,
+        notes: task.notes,
+        priority: toTaskPriority(task.priority),
+        memberId: task.memberId,
+        details: taskDetailsOf(task),
+      },
+    },
   };
 }
 
@@ -59,6 +79,7 @@ export function taskToCalendarEvent(task: TaskRecord): CalendarEvent | null {
 export function toCalendarSources(members: readonly Member[]): CalendarSource[] {
   return members.map((member) => ({
     id: member.slug,
+    memberId: member.id,
     label: member.name,
     color: member.color,
   }));
