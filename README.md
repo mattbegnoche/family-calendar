@@ -50,7 +50,7 @@ The build script is `prisma migrate deploy && next build`, so every deploy migra
 | `AUTH_SECRET` | `openssl rand -base64 32`; a different value from development |
 | `AUTH_URL` | The site's URL, e.g. `https://family-calendar-neon-one.vercel.app` — pins the OAuth callback |
 | `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | The Google OAuth client |
-| `FAMILY_CODE_SECRET` | `openssl rand -base64 32`. Changing it later makes existing family codes unreadable |
+| `FAMILY_CODE_SECRET` | Keys the encrypted family codes in the database, so it must be the SAME value everywhere that shares a database. While production and development share one, copy it from `.env.local`; only once they have separate databases may each have its own. Changing it makes every existing code unreadable until it is regenerated |
 | `ALLOWED_EMAILS` | Optional. Leave unset to let any Google account create or join a family |
 
 **Google Cloud Console**, for the OAuth client: add `https://<your-domain>/api/auth/callback/google` as an authorised redirect URI, keep the Google Calendar API enabled, and while the consent screen is in Testing add each family member's Google account as a test user.
