@@ -35,6 +35,28 @@ Day to day:
 - Seeding (`pnpm db:seed`) reads `.env.local`, so it only ever seeds development.
 - Reset development to match production: in Neon, **reset the `dev` branch from `main`**. Nothing in this repo can do that to `main`.
 
+## Deploying to Vercel
+
+The build script is `prisma migrate deploy && next build`, so every deploy migrates the database it is pointed at before it builds. That makes the environment variables the whole story.
+
+**Which branch deploys where.** Vercel builds the Production Branch (`main` unless changed in Settings → Git) as Production, and every other pushed branch as a Preview. Previews use the Preview environment variables, not Production's. If `development` is pushed, it builds as a Preview and needs Preview variables, or the build fails at `prisma migrate deploy` with "DIRECT_URL is not set".
+
+**Variables to set** (Settings → Environment Variables), for Production, and for Preview if preview builds should work:
+
+| Variable | Value |
+| -------- | ----- |
+| `DATABASE_URL` | Neon pooled URL of the `main` branch (Production) or the `dev` branch (Preview) |
+| `DIRECT_URL` | The matching direct URL. Migrations need it. |
+| `AUTH_SECRET` | `openssl rand -base64 32`; a different value from development |
+| `AUTH_URL` | The site's URL, e.g. `https://family-calendar-neon-one.vercel.app` — pins the OAuth callback |
+| `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` | The Google OAuth client |
+| `FAMILY_CODE_SECRET` | Keys the encrypted family codes in the database, so it must be the SAME value everywhere that shares a database. While production and development share one, copy it from `.env.local`; only once they have separate databases may each have its own. Changing it makes every existing code unreadable until it is regenerated |
+| `ALLOWED_EMAILS` | Optional. Leave unset to let any Google account create or join a family |
+
+**Google Cloud Console**, for the OAuth client: add `https://<your-domain>/api/auth/callback/google` as an authorised redirect URI, keep the Google Calendar API enabled, and while the consent screen is in Testing add each family member's Google account as a test user.
+
+**Going live:** set the variables, merge `development` into `main`, push `main`. Watch the build log for `prisma migrate deploy` applying any pending migrations, then sign in at the production URL.
+
 ## Scripts
 
 | Script | What it does |
